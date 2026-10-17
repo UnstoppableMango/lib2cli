@@ -1,0 +1,22 @@
+package mdx
+
+import "../../../prelude/lib2cli.tdl" as lib2cli
+
+type CompileOptions {
+  jsx: bool?
+  outputFormat: string?
+}
+
+type CompileRequest {
+  file: lib2cli.Text
+  options: CompileOptions?
+}
+
+type Mdx {
+  compile: lib2cli.Fn<CompileRequest, lib2cli.Text>
+}
+
+target lib2cli for mdx {
+  npm("@mdx-js/mdx", "3.1.0")
+  Mdx => cli
+}

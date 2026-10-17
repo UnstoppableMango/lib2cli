@@ -1,0 +1,9 @@
+schema = 3
+
+[mod]
+  [mod."github.com/unstoppablemango/tdl"]
+    version = "v0.4.13-0.20261016212040-36a578585f6e"
+    hash = "sha256-2OXXneVtKx6TDKLCOqfxLNONj4jBrzOpaHu9Gcyvy1c="
+  [mod."google.golang.org/protobuf"]
+    version = "v1.36.12"
+    hash = "sha256-MKd0AdkWEe2A79mGPzOY5I76nMqTsGJKQNPJOKyOwkQ="
