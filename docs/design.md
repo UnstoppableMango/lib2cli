@@ -22,7 +22,7 @@ Decisions below were settled in the project thread on 2026-10-16 (Q1 to Q27).
 ```tdl
 package mdx
 
-import _ "lib2cli/prelude"
+import "lib2cli/prelude" as _
 
 type CompileRequest {
   file: string
