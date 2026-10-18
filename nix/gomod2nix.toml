@@ -10,6 +10,9 @@ schema = 3
   [mod."github.com/unstoppablemango/tdl"]
     version = "v0.4.13-0.20261016212040-36a578585f6e"
     hash = "sha256-2OXXneVtKx6TDKLCOqfxLNONj4jBrzOpaHu9Gcyvy1c="
+  [mod."golang.org/x/mod"]
+    version = "v0.42.0"
+    hash = "sha256-jgjKlIzteE99u8/TbuZTk4cLAwDOVZePXaRwqEpYvPk="
   [mod."google.golang.org/protobuf"]
     version = "v1.36.12"
     hash = "sha256-MKd0AdkWEe2A79mGPzOY5I76nMqTsGJKQNPJOKyOwkQ="
