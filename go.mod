@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/charmbracelet/x/exp/golden v0.1.0
-	github.com/unstoppablemango/tdl v0.4.13-0.20261016212040-36a578585f6e
+	github.com/unstoppablemango/tdl v0.5.0
 	google.golang.org/protobuf v1.36.12
 )
 
