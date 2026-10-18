@@ -1,0 +1,14 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "unsupported",
+    "version": "1.0.0",
+    "bin": "unsupported",
+    "commands": []
+  },
+  "diagnostics": [
+    "source.tdl:6:3: error: uuid has no CLI mapping",
+    "source.tdl:7:3: error: Map\u003cint, string\u003e has no CLI mapping: a map's key must be a string",
+    "source.tdl:12:3: error: notAFunction is not a function: its type must be Fn\u003cRequest, Result\u003e, from the lib2cli module"
+  ]
+}

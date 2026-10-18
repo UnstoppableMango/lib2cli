@@ -1,0 +1,18 @@
+package unsupported
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type Request {
+  id: uuid
+  scores: Map<int, string>
+}
+
+type Lib {
+  lookup: lib.Fn<Request, string>
+  notAFunction: string
+}
+
+target lib2cli for unsupported {
+  npm("unsupported", "1.0.0")
+  Lib => cli
+}

@@ -1,0 +1,12 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "mapkey",
+    "version": "1.0.0",
+    "bin": "mapkey",
+    "commands": []
+  },
+  "diagnostics": [
+    "source.tdl:8:3: error: uuid has no CLI mapping"
+  ]
+}

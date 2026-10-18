@@ -13,16 +13,16 @@ Decisions below were settled in the project thread on 2026-10-16 (Q1 to Q27).
 - A function is described in [TDL](https://github.com/UnstoppableMango/tdl). Introspecting a library's own types comes later, and only as a way to write the TDL. (Q2, Q10, Q17)
 - lib2cli is a TDL backend plugin written in Go, in its own repo: `tdl gen` on a file with a `target lib2cli` block runs `tdl-gen-lib2cli`. (Q8, Q17, Q21)
 - Functions use the pattern TDL's protobuf backend already uses: `primitive Fn: type -> type -> type`, a type whose fields are `Fn<Req, Res>`, and target-block tags. (Q17)
-- `Fn`, `path`, `stream` and `Text` are primitives in a lib2cli prelude import, not in TDL's standard prelude. `Text` means converting with `String(x)` and writing the result raw. (Q20, Q27)
+- `Fn`, `path`, `stream` and `Text` are primitives in an imported lib2cli module (`lib/lib2cli.tdl`), not in TDL's standard prelude. lib2cli recognizes them by their package, so any import alias works. `Text` means converting with `String(x)` and writing the result raw. (Q20, Q27)
 - A binding directive names the library and picks the language: `go("github.com/x/y", "v1.2.3")` or `npm("@x/y", "1.2.3")`. Each `.tdl` file describes one library. Further directives map model names to real function names. (Q18, Q22)
 - The request type's fields become positional parameters in field order. A `whole` directive passes the struct as a single argument. (Q19)
-- Types outside the prelude's set are rejected at generation time. (Q10)
+- Types outside the standard prelude's set are rejected at generation time. (Q10)
 - TDL is pinned as both a flake input and a Go module, and lib2cli takes TDL's churn as it comes. (Q23)
 
 ```tdl
 package mdx
 
-import "lib2cli/prelude" as _
+import "lib/lib2cli.tdl" as _
 
 type CompileRequest {
   file: string

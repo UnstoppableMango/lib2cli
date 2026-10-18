@@ -1,0 +1,18 @@
+// A map whose key has no CLI mapping drops the command, as any other
+// unmapped type does.
+package mapkey
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type Request {
+  byId: Map<uuid, string>
+}
+
+type Lib {
+  lookup: lib.Fn<Request, string>
+}
+
+target lib2cli for mapkey {
+  npm("mapkey", "1.0.0")
+  Lib => cli
+}

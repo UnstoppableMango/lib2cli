@@ -1,0 +1,30 @@
+{
+  "plan": {
+    "lang": "",
+    "package": "",
+    "version": "",
+    "bin": "",
+    "commands": [
+      {
+        "name": "greet",
+        "func": "greet",
+        "whole": false,
+        "params": [
+          {
+            "name": "name",
+            "flag": "name",
+            "type": {
+              "kind": "string"
+            }
+          }
+        ],
+        "result": {
+          "kind": "string"
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    "source.tdl:11:1: error: the target block names no library: add go(module, version) or npm(package, version)"
+  ]
+}

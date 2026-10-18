@@ -1,0 +1,105 @@
+{
+  "plan": {
+    "lang": "go",
+    "package": "github.com/example/gofix/v2",
+    "version": "v2.3.4",
+    "bin": "gofix-cli",
+    "commands": [
+      {
+        "name": "convert-file",
+        "func": "ConvertFile",
+        "whole": false,
+        "params": [
+          {
+            "name": "inputPath",
+            "flag": "input-path",
+            "type": {
+              "kind": "path"
+            }
+          },
+          {
+            "name": "outputFormat",
+            "flag": "output-format",
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "ratio",
+            "flag": "ratio",
+            "type": {
+              "kind": "float"
+            }
+          },
+          {
+            "name": "verbose",
+            "flag": "verbose",
+            "type": {
+              "kind": "bool"
+            }
+          },
+          {
+            "name": "tags",
+            "flag": "tags",
+            "type": {
+              "kind": "list",
+              "elem": {
+                "kind": "string"
+              }
+            }
+          },
+          {
+            "name": "labels",
+            "flag": "labels",
+            "type": {
+              "kind": "map",
+              "elem": {
+                "kind": "string"
+              }
+            }
+          },
+          {
+            "name": "options",
+            "flag": "options",
+            "type": {
+              "kind": "option",
+              "elem": {
+                "kind": "object",
+                "name": "Options"
+              }
+            }
+          }
+        ],
+        "result": {
+          "kind": "object",
+          "name": "Options"
+        }
+      },
+      {
+        "name": "read",
+        "func": "Read",
+        "whole": true,
+        "params": [
+          {
+            "name": "in",
+            "flag": "in",
+            "type": {
+              "kind": "stream"
+            }
+          },
+          {
+            "name": "raw_bytes",
+            "flag": "raw-bytes",
+            "type": {
+              "kind": "bytes"
+            }
+          }
+        ],
+        "result": {
+          "kind": "stream"
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

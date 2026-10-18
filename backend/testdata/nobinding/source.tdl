@@ -1,0 +1,13 @@
+package nobinding
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type Request { name: string }
+
+type Lib {
+  greet: lib.Fn<Request, string>
+}
+
+target lib2cli for nobinding {
+  Lib => cli
+}

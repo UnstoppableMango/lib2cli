@@ -1,0 +1,26 @@
+// The lib2cli module: the primitives a lib2cli model describes functions
+// with. Import it under any alias; lib2cli knows these by their package,
+// so the target block does not tag them:
+//
+//   import "path/to/lib2cli.tdl" as lib
+//
+//   type Lib { compile: lib.Fn<CompileRequest, lib.Text> }
+//
+//   target lib2cli for mypkg {
+//     npm("@scope/pkg", "1.2.3")
+//     Lib => cli
+//   }
+package lib2cli
+
+// Fn<Req, Res> is a function taking Req and returning Res. Req must be a
+// struct; its fields become the command's flags.
+primitive Fn: type -> type -> type
+
+// Text is a value written raw with String(x), such as a VFile.
+primitive Text
+
+// Path is a file path.
+primitive Path
+
+// Stream is read from stdin or written to stdout.
+primitive Stream

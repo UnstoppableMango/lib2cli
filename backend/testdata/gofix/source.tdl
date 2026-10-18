@@ -1,0 +1,46 @@
+// A Go library exercising every mapping, with Path and Stream declared
+// locally and tagged instead of imported.
+package gofix
+
+import "../../../lib/lib2cli.tdl" as lib
+
+primitive Path
+primitive Stream
+
+type Name: string
+alias Labels = Map<string, string>
+
+type Options {
+  level: int
+}
+
+type ConvertRequest {
+  inputPath: Path
+  outputFormat: string
+  ratio: float64
+  verbose: bool
+  tags: List<Name>
+  labels: Labels
+  options: Options?
+}
+
+type ReadRequest {
+  in: Stream
+  raw_bytes: bytes
+}
+
+type Tool {
+  convertFile: lib.Fn<ConvertRequest, Options>
+  read: lib.Fn<ReadRequest, Stream>
+}
+
+target lib2cli for gofix {
+  go("github.com/example/gofix/v2", "v2.3.4")
+  bin("gofix-cli")
+  Path => path
+  Stream => stream
+  Tool => cli
+  Tool.convertFile => func("ConvertFile")
+  Tool.read => func("Read")
+  Tool.read => whole
+}

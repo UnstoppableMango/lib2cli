@@ -1,0 +1,35 @@
+// Field names that become the same subcommand or flag, or a flag every
+// command reserves, are errors.
+package clash
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type Request {
+  rawBytes: bytes
+  raw_bytes: bytes
+}
+
+type JsonRequest {
+  json: string
+}
+
+type Ok {
+  name: string
+}
+
+type Lib {
+  convertFile: lib.Fn<Ok, string>
+  convert_file: lib.Fn<Ok, string>
+  read: lib.Fn<Request, string>
+  dump: lib.Fn<JsonRequest, string>
+}
+
+type More {
+  read: lib.Fn<Ok, string>
+}
+
+target lib2cli for clash {
+  npm("clash", "1.0.0")
+  Lib => cli
+  More => cli
+}

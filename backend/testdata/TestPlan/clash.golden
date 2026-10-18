@@ -1,0 +1,33 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "clash",
+    "version": "1.0.0",
+    "bin": "clash",
+    "commands": [
+      {
+        "name": "convert-file",
+        "func": "convertFile",
+        "whole": false,
+        "params": [
+          {
+            "name": "name",
+            "flag": "name",
+            "type": {
+              "kind": "string"
+            }
+          }
+        ],
+        "result": {
+          "kind": "string"
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    "source.tdl:22:3: error: Lib.convertFile and Lib.convert_file are both the subcommand convert-file",
+    "source.tdl:9:3: error: rawBytes and raw_bytes are both the flag --raw-bytes",
+    "source.tdl:13:3: error: json is the flag --json, which every command reserves",
+    "source.tdl:28:3: error: Lib.read and More.read are both the subcommand read"
+  ]
+}

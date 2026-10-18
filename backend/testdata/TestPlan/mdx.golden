@@ -1,0 +1,39 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "@mdx-js/mdx",
+    "version": "3.1.0",
+    "bin": "mdx",
+    "commands": [
+      {
+        "name": "compile",
+        "func": "compile",
+        "whole": false,
+        "params": [
+          {
+            "name": "file",
+            "flag": "file",
+            "type": {
+              "kind": "text"
+            }
+          },
+          {
+            "name": "options",
+            "flag": "options",
+            "type": {
+              "kind": "option",
+              "elem": {
+                "kind": "object",
+                "name": "CompileOptions"
+              }
+            }
+          }
+        ],
+        "result": {
+          "kind": "text"
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}
