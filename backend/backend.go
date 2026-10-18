@@ -60,19 +60,27 @@ func (Backend) Describe() plugin.Description {
 	}
 }
 
-// Generate plans the model and reports the plan's diagnostics. It writes
-// no files yet.
+// Generate plans the model and, when it plans without errors, writes the
+// shim's project.
 func (Backend) Generate(_ context.Context, req *plugin.Request) (*plugin.Response, error) {
 	plan, diags := Build(req)
-	if !hasErrors(diags) {
-		// Code generation comes next; until then a model that plans
-		// cleanly says so rather than writing nothing silently.
+	if hasErrors(diags) {
+		return &plugin.Response{Diagnostics: diags}, nil
+	}
+
+	switch plan.Lang {
+	case "go":
+		files, more := goFiles(plan)
+		return &plugin.Response{Files: files, Diagnostics: append(diags, more...)}, nil
+	default:
+		// TypeScript comes next; until then a model that plans cleanly
+		// says so rather than writing nothing silently.
 		diags = append(diags, &plugin.Diagnostic{
 			Severity: plugin.Severity_SEVERITY_WARNING,
-			Message:  fmt.Sprintf("planned %d command(s) for %s; code generation is not implemented yet", len(plan.Commands), plan.Package),
+			Message:  fmt.Sprintf("planned %d command(s) for %s; TypeScript generation is not implemented yet", len(plan.Commands), plan.Package),
 		})
+		return &plugin.Response{Diagnostics: diags}, nil
 	}
-	return &plugin.Response{Diagnostics: diags}, nil
 }
 
 // hasErrors says whether any diagnostic is an error.

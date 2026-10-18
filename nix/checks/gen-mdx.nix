@@ -17,6 +17,6 @@ runCommand "lib2cli-gen-mdx"
     cp -r ${../../lib} lib
     cp -r ${../../backend/testdata/mdx} backend/testdata/mdx
     tdl gen --target lib2cli -o out backend/testdata/mdx/source.tdl 2>&1 | tee log
-    grep -q 'planned 1 command(s) for @mdx-js/mdx' log
+    grep -q 'planned 1 command(s) for @mdx-js/mdx; TypeScript generation is not implemented yet' log
     touch $out
   ''
