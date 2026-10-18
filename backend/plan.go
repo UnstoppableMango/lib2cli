@@ -83,7 +83,7 @@ type Type struct {
 	Elem *Type `json:"elem,omitempty"`
 }
 
-// primitives maps the prelude's primitives onto the neutral set.
+// primitives maps TDL's standard prelude primitives onto the neutral set.
 var primitives = map[string]Kind{
 	"string":  KindString,
 	"int":     KindInt,
@@ -97,10 +97,10 @@ var primitives = map[string]Kind{
 	"bytes":   KindBytes,
 }
 
-// Prelude is the package of the lib2cli prelude, prelude/lib2cli.tdl.
-const Prelude = "lib2cli"
+// Module is the package of the lib2cli module, lib/lib2cli.tdl.
+const Module = "lib2cli"
 
-// marks are the lib2cli primitives, keyed by their prelude name, with the
+// marks are the lib2cli primitives, keyed by their name in the module, with the
 // directive that marks a model's own declaration as the same thing.
 var marks = map[string]string{
 	"Fn":     dirFn,
@@ -241,7 +241,7 @@ func (b *builder) command(f *ir.Field) (Command, bool) {
 
 	t := b.model.Type(f.GetType())
 	if b.mark(t) != dirFn || len(t.GetArgs()) != 2 {
-		b.errorf(pos, "%s is not a function: its type must be Fn<Request, Result>, from the lib2cli prelude", name)
+		b.errorf(pos, "%s is not a function: its type must be Fn<Request, Result>, from the lib2cli module", name)
 		return Command{}, false
 	}
 
@@ -339,11 +339,11 @@ func (b *builder) resolve(id *ir.ID, pos *ir.Position) (Type, bool) {
 }
 
 // mark says which lib2cli primitive a type is, if any: one imported from
-// the prelude, or a model's own primitive tagged in the target block.
+// the lib2cli module, or a model's own primitive tagged in the target block.
 func (b *builder) mark(t *ir.Type) string {
 	if id := t.GetExtern(); id != nil {
 		externs := b.model.GetExterns()
-		if i := int(id.GetIndex()); i < len(externs) && externs[i].GetPackage() == Prelude {
+		if i := int(id.GetIndex()); i < len(externs) && externs[i].GetPackage() == Module {
 			return marks[externs[i].GetName()]
 		}
 		return ""

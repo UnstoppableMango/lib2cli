@@ -1,6 +1,6 @@
 package nobinding
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 type Request { name: string }
 

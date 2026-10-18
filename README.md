@@ -13,7 +13,7 @@ See [docs/design.md](docs/design.md) for where it is going.
 ```tdl
 package mdx
 
-import "prelude/lib2cli.tdl" as lib
+import "lib/lib2cli.tdl" as lib
 
 type CompileRequest {
   file: lib.Text
@@ -29,7 +29,7 @@ target lib2cli for mdx {
 }
 ```
 
-`Fn`, `Text`, `Path` and `Stream` come from [prelude/lib2cli.tdl](prelude/lib2cli.tdl), imported by a path relative to the importing file (here, a file at the repo root); the examples import it as `lib`.
+`Fn`, `Text`, `Path` and `Stream` come from the lib2cli module, [lib/lib2cli.tdl](lib/lib2cli.tdl), imported by a path relative to the importing file (here, a file at the repo root); the examples import it as `lib`.
 Each field of the type tagged `cli` is a command; `Type.field => func("name")` names the real function, `Type.field => whole` passes the request as one argument, and `bin("name")` names the binary.
 Subcommands and flags are the field names in kebab case, so two fields that kebab to the same name are an error, as is a request field named `json` or `help`, which every command reserves.
 

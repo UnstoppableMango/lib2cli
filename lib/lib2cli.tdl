@@ -1,4 +1,4 @@
-// The lib2cli prelude: the primitives a lib2cli model describes functions
+// The lib2cli module: the primitives a lib2cli model describes functions
 // with. Import it under any alias; lib2cli knows these by their package,
 // so the target block does not tag them:
 //

@@ -2,7 +2,7 @@
 // locally and tagged instead of imported.
 package gofix
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 primitive Path
 primitive Stream

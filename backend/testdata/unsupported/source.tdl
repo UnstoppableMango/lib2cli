@@ -1,6 +1,6 @@
 package unsupported
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 type Request {
   id: uuid

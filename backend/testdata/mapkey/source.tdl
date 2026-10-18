@@ -2,7 +2,7 @@
 // unmapped type does.
 package mapkey
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 type Request {
   byId: Map<uuid, string>

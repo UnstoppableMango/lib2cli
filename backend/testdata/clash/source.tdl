@@ -2,7 +2,7 @@
 // command reserves, are errors.
 package clash
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 type Request {
   rawBytes: bytes

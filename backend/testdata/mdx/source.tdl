@@ -1,6 +1,6 @@
 package mdx
 
-import "../../../prelude/lib2cli.tdl" as lib
+import "../../../lib/lib2cli.tdl" as lib
 
 type CompileOptions {
   jsx: bool?

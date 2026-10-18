@@ -44,7 +44,7 @@ in
           }
           ''
             mkdir -p backend/testdata
-            cp -r ${../prelude} prelude
+            cp -r ${../lib} lib
             cp -r ${../backend/testdata/mdx} backend/testdata/mdx
             tdl gen --target lib2cli -o out backend/testdata/mdx/source.tdl 2>&1 | tee log
             grep -q 'planned 1 command(s) for @mdx-js/mdx' log
