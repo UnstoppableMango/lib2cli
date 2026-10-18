@@ -42,10 +42,16 @@ var commands = []command{
 	{
 		name:   "greet",
 		params: []param{{name: "name", flag: "name", typ: str}, {name: "excited", flag: "excited", typ: boolean}},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			name, excited := Name(args[0].(string)), args[1].(bool)
-			s := "Hello, " + string(name)
-			if excited {
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 Name `json:"name"`
+				P1 bool `json:"excited"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			s := "Hello, " + string(req.P0)
+			if req.P1 {
 				s += "!"
 			}
 			return writeString(out, s)
@@ -54,19 +60,18 @@ var commands = []command{
 	{
 		name:   "divide",
 		params: []param{{name: "a", flag: "a", typ: num}, {name: "b", flag: "b", typ: num}},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			var err error
-			var a, b int8
-			if a, err = integer[int8](args[0]); err != nil {
-				return argError{0, err}
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 int8 `json:"a"`
+				P1 int8 `json:"b"`
 			}
-			if b, err = integer[int8](args[1]); err != nil {
-				return argError{1, err}
+			if err := decode(args, &req); err != nil {
+				return err
 			}
-			if b == 0 {
+			if req.P1 == 0 {
 				return errors.New("division by zero")
 			}
-			return writeJSON(out, a/b)
+			return writeJSON(out, req.P0/req.P1)
 		},
 	},
 	{
@@ -78,52 +83,43 @@ var commands = []command{
 			{name: "note", flag: "note", typ: option(str)},
 			{name: "raw_bytes", flag: "raw-bytes", typ: typ{kind: "bytes"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			var req TagRequest
-			req.Name = Name(args[0].(string))
-			if args[1] != nil {
-				v1 := args[1].([]any)
-				req.Tags = make([]string, len(v1))
-				for v2, v3 := range v1 {
-					req.Tags[v2] = v3.(string)
-				}
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 Name              `json:"name"`
+				P1 []string          `json:"tags"`
+				P2 map[string]string `json:"labels"`
+				P3 *string           `json:"note"`
+				P4 string            `json:"raw_bytes"`
 			}
-			if args[2] != nil {
-				v1 := args[2].(map[string]any)
-				req.Labels = make(map[string]string, len(v1))
-				for k, v := range v1 {
-					req.Labels[k] = v.(string)
-				}
+			if err := decode(args, &req); err != nil {
+				return err
 			}
-			if args[3] != nil {
-				v := args[3].(string)
-				req.Note = &v
-			}
-			req.RawBytes = args[4].([]byte)
-			return writeJSON(out, req)
+			var v1 TagRequest
+			v1.Name = req.P0
+			v1.Tags = req.P1
+			v1.Labels = req.P2
+			v1.Note = req.P3
+			v1.RawBytes = []byte(req.P4)
+			return writeJSON(out, v1)
 		},
 	},
 	{
 		name:   "level",
 		params: []param{{name: "options", flag: "options", typ: option(object)}, {name: "levels", flag: "levels", typ: list(object)}},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			var err error
-			n := 0
-			if args[0] != nil {
-				var o Options
-				if err = decode(args[0], &o); err != nil {
-					return argError{0, err}
-				}
-				n = o.Level
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 *Options  `json:"options"`
+				P1 []Options `json:"levels"`
 			}
-			if args[1] != nil {
-				for _, l := range args[1].([]any) {
-					var o Options
-					if err = decode(l, &o); err != nil {
-						return argError{1, err}
-					}
-					n += o.Level
-				}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			n := 0
+			if req.P0 != nil {
+				n = req.P0.Level
+			}
+			for _, l := range req.P1 {
+				n += l.Level
 			}
 			return writeJSON(out, n)
 		},
@@ -131,25 +127,45 @@ var commands = []command{
 	{
 		name:   "upper",
 		params: []param{{name: "in", flag: "in", typ: stream}},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			b, _ := io.ReadAll(args[0].(io.Reader))
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"in"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			v1, err := in.open(req.P0)
+			if err != nil {
+				return argError{0, err}
+			}
+			b, _ := io.ReadAll(v1)
 			return writeStream(out, bytes.NewReader(bytes.ToUpper(b)))
 		},
 	},
 	{
 		name:   "count",
 		params: []param{{name: "in", flag: "in", typ: stream}},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			s, err := readAll[string](args[0])
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"in"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			v1, err := in.open(req.P0)
 			if err != nil {
 				return argError{0, err}
 			}
-			return writeJSON(out, strings.Count(s, "\n"))
+			v2, err := readAll[string](v1)
+			if err != nil {
+				return argError{0, err}
+			}
+			return writeJSON(out, strings.Count(v2, "\n"))
 		},
 	},
 	{
 		name: "context",
-		call: func(ctx context.Context, args []any, out io.Writer) error {
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
 			if ctx == nil {
 				return errors.New("no context")
 			}
@@ -179,13 +195,13 @@ func TestExecute(t *testing.T) {
 		{name: "repeated scalar", args: []string{"greet", "--name=a", "--name=b"}, code: exitUsage, err: "more than once"},
 		{name: "json missing field", args: []string{"greet", "--json"}, stdin: `{"excited":true}`, code: exitUsage, err: "name is required"},
 		{name: "json null field", args: []string{"greet", "--json"}, stdin: `{"name":null}`, code: exitUsage, err: "name is required"},
-		{name: "json wrong type", args: []string{"greet", "--json"}, stdin: `{"name":1}`, code: exitUsage, err: "name number is not a string"},
+		{name: "json wrong type", args: []string{"greet", "--json"}, stdin: `{"name":1}`, code: exitUsage, err: "tool greet: name: number is not a valid shim.Name"},
 		{name: "json and flags", args: []string{"greet", "--json", "--name=a"}, code: exitUsage, err: "cannot be combined"},
 		{name: "int", args: []string{"divide", "--a=7", "--b=2"}, out: "3\n"},
 		{name: "error exits", args: []string{"divide", "--a=7", "--b=0"}, code: exitError, err: "division by zero"},
-		{name: "bad int", args: []string{"divide", "--a=x", "--b=1"}, code: exitUsage, err: "--a"},
-		{name: "int out of range", args: []string{"divide", "--a=300", "--b=1"}, code: exitUsage, err: "tool divide: --a: 300 is out of range"},
-		{name: "json int out of range", args: []string{"divide", "--json"}, stdin: `{"a":1,"b":-200}`, code: exitUsage, err: "tool divide: b: -200 is out of range"},
+		{name: "bad int", args: []string{"divide", "--a=x", "--b=1"}, code: exitUsage, err: `tool divide: --a: "x" is not an integer`},
+		{name: "int out of range", args: []string{"divide", "--a=300", "--b=1"}, code: exitUsage, err: "tool divide: --a: number 300 is not a valid int8"},
+		{name: "json int out of range", args: []string{"divide", "--json"}, stdin: `{"a":1,"b":-200}`, code: exitUsage, err: "tool divide: b: number -200 is not a valid int8"},
 		{
 			name: "whole request",
 			args: []string{"tag", "--name=n", "--tags=a", "--tags=b", "--labels=k=v", "--raw-bytes=hi"},
@@ -201,7 +217,9 @@ func TestExecute(t *testing.T) {
 		{name: "objects from json", args: []string{"level", "--json"}, stdin: `{"levels":[{"level":2},{"level":3}]}`, out: "5\n"},
 		{name: "absent option", args: []string{"level"}, out: "0\n"},
 		{name: "bad json", args: []string{"level", "--options={"}, code: exitUsage, err: "not JSON"},
-		{name: "object of the wrong shape", args: []string{"level", `--options={"level":"x"}`}, code: exitUsage, err: "--options: json: cannot unmarshal"},
+		{name: "object of the wrong shape", args: []string{"level", `--options={"level":"x"}`}, code: exitUsage, err: "--options: string is not a valid int"},
+		{name: "list element of the wrong type", args: []string{"level", `--levels={"level":1}`, `--levels=2`}, code: exitUsage, err: "--levels: number is not a valid shim.Options"},
+		{name: "bad map flag", args: []string{"tag", "--name=n", "--labels=k"}, code: exitUsage, err: `--labels: "k" is not key=value`},
 		{name: "stream from stdin", args: []string{"upper", "--in=-"}, stdin: "shout", out: "SHOUT"},
 		{name: "stream from file", args: []string{"upper", "--in", file}, out: "A\nB\n"},
 		{name: "stream into string", args: []string{"count", "--in", file}, out: "2\n"},
@@ -234,22 +252,5 @@ func TestSingleCommand(t *testing.T) {
 	code := execute(context.Background(), "greet", commands[:1], []string{"--name", "Ada"}, strings.NewReader(""), &out, io.Discard)
 	if code != exitOK || out.String() != "Hello, Ada" {
 		t.Errorf("got %d %q, want a greeting without a subcommand", code, out.String())
-	}
-}
-
-func TestInteger(t *testing.T) {
-	for _, tt := range []struct {
-		n  int64
-		ok bool
-	}{{127, true}, {128, false}, {-128, true}, {-129, false}} {
-		if _, err := integer[int8](tt.n); (err == nil) != tt.ok {
-			t.Errorf("int8 %d: got %v", tt.n, err)
-		}
-	}
-	if _, err := integer[uint8](int64(-1)); err == nil {
-		t.Error("uint8 -1 converted")
-	}
-	if n, err := integer[uint64](int64(1 << 62)); err != nil || n != 1<<62 {
-		t.Errorf("uint64: got %d, %v", n, err)
 	}
 }

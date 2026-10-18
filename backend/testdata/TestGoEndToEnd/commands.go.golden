@@ -15,10 +15,15 @@ var commands = []command{
 			{name: "name", flag: "name", typ: typ{kind: "string"}},
 			{name: "excited", flag: "excited", typ: typ{kind: "bool"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			v1 := args[0].(string)
-			v2 := args[1].(bool)
-			res := lib.Greet(v1, v2)
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"name"`
+				P1 bool   `json:"excited"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			res := lib.Greet(req.P0, req.P1)
 			return writeString(out, res)
 		},
 	},
@@ -28,14 +33,15 @@ var commands = []command{
 			{name: "word", flag: "word", typ: typ{kind: "string"}},
 			{name: "times", flag: "times", typ: typ{kind: "int"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			var err error
-			v1 := args[0].(string)
-			var v2 uint8
-			if v2, err = integer[uint8](args[1]); err != nil {
-				return argError{1, err}
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"word"`
+				P1 uint8  `json:"times"`
 			}
-			res := lib.Repeat(v1, v2)
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			res := lib.Repeat(req.P0, req.P1)
 			return writeString(out, res)
 		},
 	},
@@ -45,10 +51,15 @@ var commands = []command{
 			{name: "a", flag: "a", typ: typ{kind: "float"}},
 			{name: "b", flag: "b", typ: typ{kind: "float"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			v1 := args[0].(float64)
-			v2 := args[1].(float64)
-			res, err := lib.Divide(ctx, v1, v2)
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 float64 `json:"a"`
+				P1 float64 `json:"b"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			res, err := lib.Divide(ctx, req.P0, req.P1)
 			if err != nil {
 				return err
 			}
@@ -60,8 +71,17 @@ var commands = []command{
 		params: []param{
 			{name: "in", flag: "in", typ: typ{kind: "stream"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			v1 := args[0].(io.Reader)
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"in"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			v1, err := in.open(req.P0)
+			if err != nil {
+				return argError{0, err}
+			}
 			res, err := lib.Count(v1)
 			if err != nil {
 				return err
@@ -74,8 +94,17 @@ var commands = []command{
 		params: []param{
 			{name: "in", flag: "in", typ: typ{kind: "stream"}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			v1 := args[0].(io.Reader)
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string `json:"in"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			v1, err := in.open(req.P0)
+			if err != nil {
+				return argError{0, err}
+			}
 			res := lib.Upper(v1)
 			return writeStream(out, res)
 		},
@@ -88,35 +117,28 @@ var commands = []command{
 			{name: "labels", flag: "labels", typ: typ{kind: "map", elem: &typ{kind: "string"}}},
 			{name: "note", flag: "note", typ: typ{kind: "option", elem: &typ{kind: "string"}}},
 		},
-		call: func(ctx context.Context, args []any, out io.Writer) error {
-			var req lib.TagRequest
-			req.Name = args[0].(string)
-			if args[1] != nil {
-				v1 := args[1].([]any)
-				req.Tags = make([]string, len(v1))
-				for v2, v3 := range v1 {
-					req.Tags[v2] = v3.(string)
-				}
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 string            `json:"name"`
+				P1 []string          `json:"tags"`
+				P2 map[string]string `json:"labels"`
+				P3 *string           `json:"note"`
 			}
-			if args[2] != nil {
-				v4 := args[2].(map[string]any)
-				req.Labels = make(map[string]string, len(v4))
-				for v5, v6 := range v4 {
-					v7 := v6.(string)
-					req.Labels[v5] = v7
-				}
+			if err := decode(args, &req); err != nil {
+				return err
 			}
-			if args[3] != nil {
-				v8 := args[3].(string)
-				req.Note = &v8
-			}
-			res := lib.Tag(req)
+			var v1 lib.TagRequest
+			v1.Name = req.P0
+			v1.Tags = req.P1
+			v1.Labels = req.P2
+			v1.Note = req.P3
+			res := lib.Tag(v1)
 			return writeJSON(out, res)
 		},
 	},
 	{
 		name: "version",
-		call: func(ctx context.Context, args []any, out io.Writer) error {
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
 			res := lib.Version()
 			return writeString(out, res.String())
 		},

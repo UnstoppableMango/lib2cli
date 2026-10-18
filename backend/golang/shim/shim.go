@@ -2,12 +2,13 @@
 // copies this file into the generated project as package main, beside
 // main.go and the generator that writes commands.go.
 //
-// The runtime only knows lib2cli's neutral types: it reads each flag, or
-// the --json object, into a neutral value and hands the values to a
-// command's call. Each call is generated at build time from the
-// function's real signature, so the conversions into the library's Go
-// types, the context it is given and the error it returns are all written
-// out as plain Go and checked by the compiler. Nothing here uses reflect.
+// The runtime only knows lib2cli's neutral types. It turns a command's
+// flags into one JSON object keyed by parameter name, or takes that object
+// from stdin with --json, and hands it to the command's call. Each call is
+// generated at build time from the function's real signature: it decodes
+// the object with encoding/json into a struct of the function's own
+// parameter types, calls the function, and writes the result. Nothing here
+// uses reflect.
 package shim
 
 import (
@@ -41,15 +42,14 @@ type command struct {
 	name   string
 	params []param
 
-	// call converts args, one neutral value per param, to the function's
-	// types, calls it, and writes its result to out. A neutral value is
-	// a string (string, path, text), int64, float64, bool, []byte,
-	// io.Reader (stream), json.RawMessage (object), []any (list),
-	// map[string]any (map), or nil for an option, list or map left out.
-	call func(ctx context.Context, args []any, out io.Writer) error
+	// call decodes args, a JSON object keyed by parameter name, into the
+	// function's types, calls it, and writes its result to out. It opens
+	// stream parameters from in.
+	call func(ctx context.Context, args []byte, in *inputs, out io.Writer) error
 }
 
-// argError is an argument call could not convert to the function's type.
+// argError is an argument call could not use: parameter param's, or
+// with param -1, the object's.
 type argError struct {
 	param int
 	err   error
@@ -136,7 +136,7 @@ func (c command) execute(ctx context.Context, name string, args []string, stdin 
 	in := &inputs{stdin: stdin}
 	defer in.close()
 
-	var vals []any
+	var obj []byte
 	var err error
 	if *asJSON {
 		for i, p := range c.params {
@@ -145,29 +145,51 @@ func (c command) execute(ctx context.Context, name string, args []string, stdin 
 				return exitUsage
 			}
 		}
-		vals, err = c.fromJSON(in)
+		in.stdinRead = true
+		obj, err = c.fromJSON(stdin)
 	} else {
-		vals, err = c.fromFlags(in, raw)
+		obj, err = c.fromFlags(raw)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return exitUsage
 	}
 
-	if err := c.call(ctx, vals, stdout); err != nil {
-		var arg argError
-		if errors.As(err, &arg) {
-			label := "--" + c.params[arg.param].flag
-			if *asJSON {
-				label = c.params[arg.param].name
-			}
-			fmt.Fprintf(stderr, "%s: %s: %v\n", name, label, arg.err)
-			return exitUsage
-		}
+	err = c.call(ctx, obj, in, stdout)
+	var arg argError
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.As(err, &arg):
+		fmt.Fprintf(stderr, "%s: %s\n", name, c.describeArg(arg, *asJSON))
+		return exitUsage
+	default:
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return exitError
 	}
-	return exitOK
+}
+
+// describeArg says which parameter an argError is about, as its flag or,
+// with --json, its field.
+func (c command) describeArg(e argError, asJSON bool) string {
+	i, msg := e.param, e.err.Error()
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(e.err, &typeErr) {
+		field, _, _ := strings.Cut(typeErr.Field, ".")
+		for j, p := range c.params {
+			if p.name == field {
+				i = j
+			}
+		}
+		msg = fmt.Sprintf("%s is not a valid %s", typeErr.Value, typeErr.Type)
+	}
+	switch {
+	case i < 0:
+		return msg
+	case asJSON:
+		return c.params[i].name + ": " + msg
+	}
+	return "--" + c.params[i].flag + ": " + msg
 }
 
 // values collects every occurrence of one flag.
@@ -216,13 +238,15 @@ func describe(t typ) string {
 // inputs opens the files stream parameters name and closes them after the
 // call.
 type inputs struct {
-	stdin  io.Reader
-	opened []io.Closer
+	stdin     io.Reader
+	stdinRead bool // stdin held the --json arguments
+	opened    []io.Closer
 }
 
-func (in *inputs) open(name string, allowStdin bool) (io.Reader, error) {
+// open opens a stream parameter: the file name names, or stdin for -.
+func (in *inputs) open(name string) (io.Reader, error) {
 	if name == "-" {
-		if !allowStdin {
+		if in.stdinRead {
 			return nil, errors.New("stdin holds the --json arguments, so a stream cannot read it")
 		}
 		return in.stdin, nil
@@ -241,212 +265,138 @@ func (in *inputs) close() {
 	}
 }
 
-// fromFlags converts each flag's occurrences to a neutral value. A missing
-// bool is false and a missing option, list or map is nil; any other
-// missing flag is an error.
-func (c command) fromFlags(in *inputs, raw []*values) ([]any, error) {
-	vals := make([]any, len(c.params))
+// fromFlags writes the flags as the JSON object a call decodes. A missing
+// bool, option, list or map is left out, so it decodes as its zero value;
+// any other missing flag is an error.
+func (c command) fromFlags(raw []*values) ([]byte, error) {
+	obj := make(map[string]any, len(c.params))
 	for i, p := range c.params {
 		set := raw[i].set
+		var v any
+		var err error
 		switch {
-		case p.typ.kind == "list" && len(set) > 0:
-			list := make([]any, 0, len(set))
-			for _, s := range set {
-				v, err := parse(in, *p.typ.elem, s)
-				if err != nil {
-					return nil, fmt.Errorf("--%s: %w", p.flag, err)
-				}
-				list = append(list, v)
+		case len(set) == 0:
+			if !omittable(p.typ) {
+				return nil, fmt.Errorf("--%s is required", p.flag)
 			}
-			vals[i] = list
-		case p.typ.kind == "map" && len(set) > 0:
-			m := make(map[string]any, len(set))
-			for _, s := range set {
-				k, rest, ok := strings.Cut(s, "=")
-				if !ok {
-					return nil, fmt.Errorf("--%s: %q is not key=value", p.flag, s)
-				}
-				v, err := parse(in, *p.typ.elem, rest)
-				if err != nil {
-					return nil, fmt.Errorf("--%s: %w", p.flag, err)
-				}
-				m[k] = v
-			}
-			vals[i] = m
+			continue
+		case p.typ.kind == "list" || p.typ.kind == "map":
+			v, err = repeated(p.typ, set)
 		case len(set) > 1:
 			return nil, fmt.Errorf("--%s is given more than once", p.flag)
-		case len(set) == 1:
-			v, err := parse(in, p.typ, set[0])
-			if err != nil {
-				return nil, fmt.Errorf("--%s: %w", p.flag, err)
-			}
-			vals[i] = v
 		default:
-			v, err := absent(p.typ)
-			if err != nil {
-				return nil, fmt.Errorf("--%s %w", p.flag, err)
-			}
-			vals[i] = v
+			v, err = literal(p.typ, set[0])
 		}
+		if err != nil {
+			return nil, fmt.Errorf("--%s: %w", p.flag, err)
+		}
+		obj[p.name] = v
 	}
-	return vals, nil
+	return json.Marshal(obj)
 }
 
-// absent is the value of a parameter left out: false for a bool, nil for
-// an option, list or map, and an error for anything else.
-func absent(t typ) (any, error) {
-	switch t.kind {
-	case "bool":
-		return false, nil
-	case "option", "list", "map":
-		return nil, nil
+// repeated writes every occurrence of a list flag as a JSON array, or of
+// a map flag, each key=value, as an object.
+func repeated(t typ, set []string) (any, error) {
+	list := make([]json.RawMessage, len(set))
+	m := make(map[string]json.RawMessage, len(set))
+	for i, s := range set {
+		var k string
+		if t.kind == "map" {
+			var ok bool
+			if k, s, ok = strings.Cut(s, "="); !ok {
+				return nil, fmt.Errorf("%q is not key=value", k)
+			}
+		}
+		v, err := literal(*t.elem, s)
+		if err != nil {
+			return nil, err
+		}
+		list[i], m[k] = v, v
 	}
-	return nil, errors.New("is required")
+	if t.kind == "map" {
+		return m, nil
+	}
+	return list, nil
 }
 
-// parse converts one flag occurrence. A list or map inside a list or map
-// is given as JSON.
-func parse(in *inputs, t typ, s string) (any, error) {
+// literal writes one flag occurrence as JSON. A list, map or object is
+// given as JSON already; a stream is the name of the file to open.
+func literal(t typ, s string) (json.RawMessage, error) {
 	switch t.kind {
 	case "option":
-		return parse(in, *t.elem, s)
+		return literal(*t.elem, s)
 	case "int":
-		return strconv.ParseInt(s, 10, 64)
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an integer", s)
+		}
+		return json.RawMessage(strconv.FormatInt(n, 10)), nil
 	case "float":
-		return strconv.ParseFloat(s, 64)
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a number", s)
+		}
+		return json.Marshal(f)
 	case "bool":
-		return strconv.ParseBool(s)
-	case "bytes":
-		return []byte(s), nil
-	case "stream":
-		return in.open(s, true)
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a bool", s)
+		}
+		return json.Marshal(b)
 	case "object", "list", "map":
 		if !json.Valid([]byte(s)) {
 			return nil, fmt.Errorf("%q is not JSON", s)
 		}
-		return fromRaw(in, t, json.RawMessage(s))
+		return json.RawMessage(s), nil
 	}
-	return s, nil
+	return json.Marshal(s)
 }
 
-// fromJSON reads the arguments as one object from stdin, keyed by field
-// name. As with flags, a missing or null bool, option, list or map field
-// takes its absent value, and any other is an error.
-func (c command) fromJSON(in *inputs) ([]any, error) {
-	var obj map[string]json.RawMessage
-	if err := json.NewDecoder(in.stdin).Decode(&obj); err != nil {
+// omittable says whether a parameter may be left out.
+func omittable(t typ) bool {
+	switch t.kind {
+	case "option", "bool", "list", "map":
+		return true
+	}
+	return false
+}
+
+// fromJSON reads the arguments as one object from stdin. As with flags, a
+// missing or null bool, option, list or map field decodes as its zero
+// value, and any other is an error.
+func (c command) fromJSON(stdin io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
 		return nil, fmt.Errorf("reading --json arguments: %w", err)
 	}
-	vals := make([]any, len(c.params))
-	for i, p := range c.params {
-		var err error
-		if data, ok := obj[p.name]; ok && string(data) != "null" {
-			vals[i], err = fromRaw(in, p.typ, data)
-		} else {
-			vals[i], err = absent(p.typ)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("%s %w", p.name, err)
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("reading --json arguments: %w", err)
+	}
+	for _, p := range c.params {
+		if v, ok := obj[p.name]; (!ok || string(v) == "null") && !omittable(p.typ) {
+			return nil, fmt.Errorf("%s is required", p.name)
 		}
 	}
-	return vals, nil
+	return data, nil
 }
 
-// fromRaw converts a JSON value to a neutral value. A stream is opened
-// from the path it names, and bytes are the string's bytes.
-func fromRaw(in *inputs, t typ, data json.RawMessage) (any, error) {
-	var err error
-	switch t.kind {
-	case "option":
-		if string(data) == "null" {
-			return nil, nil
-		}
-		return fromRaw(in, *t.elem, data)
-	case "int":
-		var n int64
-		err = json.Unmarshal(data, &n)
-		return n, wrap(err)
-	case "float":
-		var f float64
-		err = json.Unmarshal(data, &f)
-		return f, wrap(err)
-	case "bool":
-		var b bool
-		err = json.Unmarshal(data, &b)
-		return b, wrap(err)
-	case "object":
-		return data, nil
-	case "list":
-		var raw []json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, wrap(err)
-		}
-		list := make([]any, len(raw))
-		for i, r := range raw {
-			if list[i], err = fromRaw(in, *t.elem, r); err != nil {
-				return nil, err
-			}
-		}
-		return list, nil
-	case "map":
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, wrap(err)
-		}
-		m := make(map[string]any, len(raw))
-		for k, r := range raw {
-			if m[k], err = fromRaw(in, *t.elem, r); err != nil {
-				return nil, err
-			}
-		}
-		return m, nil
-	}
+// The helpers below are what generated calls decode and write with.
 
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, wrap(err)
+// decode decodes a call's arguments into req.
+func decode(args []byte, req any) error {
+	if err := json.Unmarshal(args, req); err != nil {
+		return argError{-1, err}
 	}
-	switch t.kind {
-	case "bytes":
-		return []byte(s), nil
-	case "stream":
-		return in.open(s, false)
-	}
-	return s, nil
-}
-
-// wrap says which JSON value was the wrong type.
-func wrap(err error) error {
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
-		return fmt.Errorf("%s is not a %s", typeErr.Value, typeErr.Type)
-	}
-	return err
-}
-
-// The helpers below are what generated calls convert and write with.
-
-// integer converts an int argument to the function's integer type,
-// rejecting a value the type cannot hold.
-func integer[T ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](v any) (T, error) {
-	n := v.(int64)
-	t := T(n)
-	if int64(t) != n || (t < 0) != (n < 0) {
-		return 0, fmt.Errorf("%d is out of range", n)
-	}
-	return t, nil
+	return nil
 }
 
 // readAll reads a stream argument whole, for a function taking a string
 // or byte slice.
-func readAll[T ~string | ~[]byte](v any) (T, error) {
-	data, err := io.ReadAll(v.(io.Reader))
+func readAll[T ~string | ~[]byte](r io.Reader) (T, error) {
+	data, err := io.ReadAll(r)
 	return T(data), err
-}
-
-// decode decodes an object argument into p.
-func decode(v any, p any) error {
-	return json.Unmarshal(v.(json.RawMessage), p)
 }
 
 func writeString(w io.Writer, s string) error {

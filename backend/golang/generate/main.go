@@ -4,7 +4,7 @@
 //
 // It reads the plan from lib2cli.json, loads the library's exported types
 // from the compiler's export data, and writes for each command a call
-// that converts the runtime's neutral values to the function's own
+// that decodes the runtime's JSON arguments into the function's own
 // parameter types, injects a leading context.Context, returns a trailing
 // error, and writes the result. A signature the model does not fit fails
 // here, before anything is built. It uses only the standard library and
@@ -233,14 +233,11 @@ type gen struct {
 	used    map[string]bool   // import paths commands.go refers to
 	taken   map[string]bool   // names an import may not use
 
-	// Per command: the next fresh variable, and whether a conversion
-	// needs err declared.
-	n       int
-	needErr bool
+	n int // the last fresh variable in the current command
 }
 
 // locals are the names a call declares, which no import may shadow.
-var locals = regexp.MustCompile(`^(ctx|args|out|err|req|res|v[0-9]+)$`)
+var locals = regexp.MustCompile(`^(ctx|args|in|out|err|req|res|v[0-9]+)$`)
 
 // qualify names a package in commands.go, importing it on first use.
 func (g *gen) qualify(p *types.Package) string {
@@ -271,7 +268,7 @@ func (g *gen) fresh() string {
 
 // command writes one command's table entry.
 func (g *gen) command(c command) (string, error) {
-	g.n, g.needErr = 0, false
+	g.n = 0
 
 	fn, ok := g.lib.Scope().Lookup(c.Func).(*types.Func)
 	if !ok {
@@ -307,36 +304,48 @@ func (g *gen) command(c command) (string, error) {
 		return "", fmt.Errorf("%s returns %d values; a command writes one", c.Func, n)
 	}
 
-	var body strings.Builder
+	// The arguments decode into a struct with a field per parameter,
+	// typed as the function takes it, then pass from there.
+	var fields, body strings.Builder
+	var whole *types.Struct
+	if c.Whole {
+		if whole, _ = structOf(ins.At(first).Type()); whole == nil {
+			return "", fmt.Errorf("%s takes %s, but a whole command passes a struct", c.Func, ins.At(first).Type())
+		}
+	}
+	values := make([]string, len(c.Params))
+	for i, p := range c.Params {
+		var t types.Type
+		if whole != nil {
+			f := field(whole, p.Name)
+			if f == nil {
+				return "", fmt.Errorf("%s has no exported field for %s", ins.At(first).Type(), p.Name)
+			}
+			t = f.Type()
+		} else {
+			t = ins.At(first + i).Type()
+		}
+		ft, v, err := g.arg(&body, p.Type, t, i)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", p.Name, err)
+		}
+		fmt.Fprintf(&fields, "P%d %s `json:%s`\n", i, ft, strconv.Quote(p.Name))
+		values[i] = v
+	}
 	if c.Whole {
 		t := ins.At(first).Type()
-		st, elem := structOf(t)
-		if st == nil {
-			return "", fmt.Errorf("%s takes %s, but a whole command passes a struct", c.Func, t)
-		}
-		if elem != nil {
-			fmt.Fprintf(&body, "req := new(%s)\n", g.typeString(elem))
+		v := g.fresh()
+		if _, elem := structOf(t); elem != nil {
+			fmt.Fprintf(&body, "%s := new(%s)\n", v, g.typeString(elem))
 		} else {
-			fmt.Fprintf(&body, "var req %s\n", g.typeString(t))
+			fmt.Fprintf(&body, "var %s %s\n", v, g.typeString(t))
 		}
 		for i, p := range c.Params {
-			f := field(st, p.Name)
-			if f == nil {
-				return "", fmt.Errorf("%s has no exported field for %s", t, p.Name)
-			}
-			if err := g.convert(&body, "req."+f.Name(), fmt.Sprintf("args[%d]", i), p.Type, f.Type(), i); err != nil {
-				return "", fmt.Errorf("%s: %w", p.Name, err)
-			}
+			fmt.Fprintf(&body, "%s.%s = %s\n", v, field(whole, p.Name).Name(), values[i])
 		}
-		args = append(args, "req")
+		args = append(args, v)
 	} else {
-		for i, p := range c.Params {
-			v := g.fresh()
-			if err := g.declare(&body, v, fmt.Sprintf("args[%d]", i), p.Type, ins.At(first+i).Type(), i); err != nil {
-				return "", fmt.Errorf("%s: %w", p.Name, err)
-			}
-			args = append(args, v)
-		}
+		args = append(args, values...)
 	}
 
 	call := fmt.Sprintf("lib.%s(%s)", fn.Name(), strings.Join(args, ", "))
@@ -368,131 +377,121 @@ func (g *gen) command(c command) (string, error) {
 		}
 		b.WriteString("},\n")
 	}
-	b.WriteString("call: func(ctx context.Context, args []any, out io.Writer) error {\n")
+	b.WriteString("call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {\n")
 	g.used["context"], g.used["io"] = true, true
-	if g.needErr {
-		b.WriteString("var err error\n")
+	if len(c.Params) > 0 {
+		fmt.Fprintf(&b, "var req struct {\n%s}\nif err := decode(args, &req); err != nil {\nreturn err\n}\n", fields.String())
 	}
 	fmt.Fprintf(&b, "%s},\n},\n", body.String())
 	return b.String(), nil
 }
 
-// declare writes statements declaring v, of type t, from src, as convert
-// does.
-func (g *gen) declare(b *strings.Builder, v, src string, nt typ, t types.Type, i int) error {
-	if e, ok := g.expr(src, nt, t); ok {
-		fmt.Fprintf(b, "%s := %s\n", v, e)
-		return nil
-	}
-	fmt.Fprintf(b, "var %s %s\n", v, g.typeString(t))
-	return g.convert(b, v, src, nt, t, i)
-}
-
-// expr is the expression of type t that converts src, when one cannot
-// fail.
-func (g *gen) expr(src string, nt typ, t types.Type) (string, bool) {
-	u := t.Underlying()
-	switch {
-	case (nt.Kind == "string" || nt.Kind == "path" || nt.Kind == "text") && isBasic(u, types.IsString):
-		return g.conversion(t, src+".(string)", types.Typ[types.String]), true
-	case nt.Kind == "float" && isBasic(u, types.IsFloat):
-		return g.conversion(t, src+".(float64)", types.Typ[types.Float64]), true
-	case nt.Kind == "bool" && isBasic(u, types.IsBoolean):
-		return g.conversion(t, src+".(bool)", types.Typ[types.Bool]), true
-	case nt.Kind == "bytes" && isBytes(u):
-		return g.conversion(t, src+".([]byte)", types.NewSlice(types.Typ[types.Byte])), true
-	case nt.Kind == "stream" && types.Identical(t, g.reader):
-		return src + ".(io.Reader)", true
-	}
-	return "", false
-}
-
-// convert writes statements setting dst, of type t, from src, a neutral
-// value of type nt. A value that does not convert returns an argError for
-// parameter i.
-func (g *gen) convert(b *strings.Builder, dst, src string, nt typ, t types.Type, i int) error {
-	u := t.Underlying()
+// arg is the field type parameter i decodes into, for a function taking
+// t, and the expression that passes it, req.Pi, after any statements it
+// writes to b. Everything decodes with encoding/json except a stream,
+// which is the name of a file to open, and bytes, which are a string's
+// own bytes rather than base64.
+func (g *gen) arg(b *strings.Builder, nt typ, t types.Type, i int) (field, value string, err error) {
+	src := fmt.Sprintf("req.P%d", i)
 	mismatch := fmt.Errorf("the model gives a %s, but the function takes %s", describe(nt), t)
-	if e, ok := g.expr(src, nt, t); ok {
-		fmt.Fprintf(b, "%s = %s\n", dst, e)
-		return nil
-	}
-	// assign assigns a scalar to a type, such as any, that holds it as it
-	// is.
-	assign := func(from string, ft types.Type) error {
-		if !types.AssignableTo(ft, t) {
-			return mismatch
-		}
-		fmt.Fprintf(b, "%s = %s.(%s)\n", dst, src, from)
-		return nil
-	}
-	fallible := func(expr string) {
-		g.needErr = true
-		fmt.Fprintf(b, "if %s, err = %s; err != nil {\nreturn argError{%d, err}\n}\n", dst, expr, i)
+	elem, optional := nt, false
+	if nt.Kind == "option" && (nt.Elem.Kind == "stream" || nt.Elem.Kind == "bytes") {
+		elem, optional = *nt.Elem, true
 	}
 
+	switch elem.Kind {
+	case "stream", "bytes":
+		target := t
+		p, pointer := t.Underlying().(*types.Pointer)
+		if optional && pointer && elem.Kind == "bytes" {
+			target = p.Elem()
+		}
+		u := target.Underlying()
+		if elem.Kind == "bytes" && !isBytes(u) ||
+			elem.Kind == "stream" && !types.AssignableTo(g.reader, target) && !isBasic(u, types.IsString) && !isBytes(u) {
+			return "", "", mismatch
+		}
+		if !optional {
+			return "string", g.read(b, elem.Kind, src, target, i), nil
+		}
+		v := g.fresh()
+		fmt.Fprintf(b, "var %s %s\nif %s != nil {\n", v, g.typeString(t), src)
+		x := g.read(b, elem.Kind, "*"+src, target, i)
+		if target != t {
+			e := g.fresh()
+			fmt.Fprintf(b, "%s := %s\n", e, x)
+			x = "&" + e
+		}
+		fmt.Fprintf(b, "%s = %s\n}\n", v, x)
+		return "*string", v, nil
+	}
+
+	if err := g.fits(nt, t); errors.Is(err, errMismatch) {
+		return "", "", mismatch
+	} else if err != nil {
+		return "", "", err
+	}
+	return g.typeString(t), src, nil
+}
+
+// read writes the statements that turn src, a string, into a t: a
+// stream's file opened, and read whole when t is a string or byte slice,
+// or bytes converted.
+func (g *gen) read(b *strings.Builder, kind, src string, t types.Type, i int) string {
+	if kind == "bytes" {
+		return g.conversion(t, src, types.Typ[types.String])
+	}
+	r := g.fresh()
+	fmt.Fprintf(b, "%s, err := in.open(%s)\nif err != nil {\nreturn argError{%d, err}\n}\n", r, src, i)
+	if types.AssignableTo(g.reader, t) {
+		return r
+	}
+	v := g.fresh()
+	fmt.Fprintf(b, "%s, err := readAll[%s](%s)\nif err != nil {\nreturn argError{%d, err}\n}\n", v, g.typeString(t), r, i)
+	return v
+}
+
+var errMismatch = errors.New("mismatch")
+
+// fits checks that a value of neutral type nt decodes with encoding/json
+// into a t.
+func (g *gen) fits(nt typ, t types.Type) error {
+	u := t.Underlying()
+	if iface, ok := u.(*types.Interface); ok && iface.Empty() {
+		return nil
+	}
+	ok := false
 	switch nt.Kind {
 	case "string", "path", "text":
-		return assign("string", types.Typ[types.String])
-	case "float":
-		return assign("float64", types.Typ[types.Float64])
-	case "bool":
-		return assign("bool", types.Typ[types.Bool])
-	case "bytes":
-		return assign("[]byte", types.NewSlice(types.Typ[types.Byte]))
+		ok = isBasic(u, types.IsString)
 	case "int":
-		if !isBasic(u, types.IsInteger) {
-			return assign("int64", types.Typ[types.Int64])
-		}
-		fallible(fmt.Sprintf("integer[%s](%s)", g.typeString(t), src))
-	case "stream":
-		switch {
-		case types.AssignableTo(g.reader, t):
-			fmt.Fprintf(b, "%s = %s.(io.Reader)\n", dst, src)
-		case isBasic(u, types.IsString) || isBytes(u):
-			fallible(fmt.Sprintf("readAll[%s](%s)", g.typeString(t), src))
-		default:
-			return mismatch
-		}
+		ok = isBasic(u, types.IsInteger)
+	case "float":
+		ok = isBasic(u, types.IsFloat)
+	case "bool":
+		ok = isBasic(u, types.IsBoolean)
 	case "object":
-		g.needErr = true
-		fmt.Fprintf(b, "if err = decode(%s, &%s); err != nil {\nreturn argError{%d, err}\n}\n", src, dst, i)
+		return nil
+	case "stream", "bytes":
+		return fmt.Errorf("a %s inside a list or map is not supported", nt.Kind)
 	case "option":
-		fmt.Fprintf(b, "if %s != nil {\n", src)
-		if p, ok := u.(*types.Pointer); ok {
-			v := g.fresh()
-			if err := g.declare(b, v, src, *nt.Elem, p.Elem(), i); err != nil {
-				return err
-			}
-			fmt.Fprintf(b, "%s = &%s\n", dst, v)
-		} else if err := g.convert(b, dst, src, *nt.Elem, t, i); err != nil {
-			return err
+		if p, isPointer := u.(*types.Pointer); isPointer {
+			return g.fits(*nt.Elem, p.Elem())
 		}
-		b.WriteString("}\n")
+		return g.fits(*nt.Elem, t)
 	case "list":
-		s, ok := u.(*types.Slice)
-		if !ok {
-			return mismatch
+		if s, isSlice := u.(*types.Slice); isSlice {
+			return g.fits(*nt.Elem, s.Elem())
 		}
-		l, k, e := g.fresh(), g.fresh(), g.fresh()
-		fmt.Fprintf(b, "if %s != nil {\n%s := %s.([]any)\n%s = make(%s, len(%s))\nfor %s, %s := range %s {\n", src, l, src, dst, g.typeString(t), l, k, e, l)
-		if err := g.convert(b, dst+"["+k+"]", e, *nt.Elem, s.Elem(), i); err != nil {
-			return err
-		}
-		b.WriteString("}\n}\n")
 	case "map":
-		m, ok := u.(*types.Map)
-		if !ok || !isBasic(m.Key().Underlying(), types.IsString) {
-			return mismatch
+		if m, isMap := u.(*types.Map); isMap && isBasic(m.Key().Underlying(), types.IsString) {
+			return g.fits(*nt.Elem, m.Elem())
 		}
-		mv, k, e, v := g.fresh(), g.fresh(), g.fresh(), g.fresh()
-		fmt.Fprintf(b, "if %s != nil {\n%s := %s.(map[string]any)\n%s = make(%s, len(%s))\nfor %s, %s := range %s {\n", src, mv, src, dst, g.typeString(t), mv, k, e, mv)
-		if err := g.declare(b, v, e, *nt.Elem, m.Elem(), i); err != nil {
-			return err
-		}
-		fmt.Fprintf(b, "%s[%s] = %s\n}\n}\n", dst, g.conversion(m.Key(), k, types.Typ[types.String]), v)
 	default:
 		return fmt.Errorf("unknown kind %q", nt.Kind)
+	}
+	if !ok {
+		return errMismatch
 	}
 	return nil
 }

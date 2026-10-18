@@ -130,7 +130,7 @@ func TestGoEndToEnd(t *testing.T) {
 	}{
 		{args: []string{"greet", "--name", "Ada", "--excited"}, out: "Hello, Ada!"},
 		{args: []string{"repeat", "--word", "ab", "--times", "3"}, out: "ababab"},
-		{args: []string{"repeat", "--word", "ab", "--times", "300"}, code: 2, err: "greet repeat: --times: 300 is out of range\n"},
+		{args: []string{"repeat", "--word", "ab", "--times", "300"}, code: 2, err: "greet repeat: --times: number 300 is not a valid uint8\n"},
 		{args: []string{"divide", "--a", "9", "--b", "3"}, out: "3\n"},
 		{args: []string{"divide", "--json"}, stdin: `{"a": 1, "b": 4}`, out: "0.25\n"},
 		{args: []string{"divide", "--a", "1", "--b", "0"}, code: 1, err: "greet divide: division by zero\n"},
