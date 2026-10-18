@@ -164,6 +164,19 @@ var commands = []command{
 		},
 	},
 	{
+		name:   "big",
+		params: []param{{name: "n", flag: "n", typ: num}},
+		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
+			var req struct {
+				P0 uint64 `json:"n"`
+			}
+			if err := decode(args, &req); err != nil {
+				return err
+			}
+			return writeJSON(out, req.P0)
+		},
+	},
+	{
 		name: "context",
 		call: func(ctx context.Context, args []byte, in *inputs, out io.Writer) error {
 			if ctx == nil {
@@ -224,6 +237,7 @@ func TestExecute(t *testing.T) {
 		{name: "stream from file", args: []string{"upper", "--in", file}, out: "A\nB\n"},
 		{name: "stream into string", args: []string{"count", "--in", file}, out: "2\n"},
 		{name: "stream in json mode", args: []string{"count", "--json"}, stdin: `{"in":"-"}`, code: exitUsage, err: "stdin holds"},
+		{name: "uint64 beyond int64", args: []string{"big", "--n=18446744073709551615"}, out: "18446744073709551615\n"},
 		{name: "context", args: []string{"context"}},
 		{name: "no command", code: exitUsage, err: "usage:"},
 		{name: "help", args: []string{"--help"}, out: "usage:"},

@@ -327,11 +327,15 @@ func literal(t typ, s string) (json.RawMessage, error) {
 	case "option":
 		return literal(*t.elem, s)
 	case "int":
-		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%q is not an integer", s)
+		// The generated call range-checks the value against the
+		// function's own type, which may be a uint64.
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return json.RawMessage(strconv.FormatInt(n, 10)), nil
 		}
-		return json.RawMessage(strconv.FormatInt(n, 10)), nil
+		if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+			return json.RawMessage(strconv.FormatUint(n, 10)), nil
+		}
+		return nil, fmt.Errorf("%q is not an integer", s)
 	case "float":
 		f, err := strconv.ParseFloat(s, 64)
 		if err != nil {
