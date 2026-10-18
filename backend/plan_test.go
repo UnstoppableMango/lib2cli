@@ -1,32 +1,30 @@
 package backend
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/charmbracelet/x/exp/golden"
 	"github.com/unstoppablemango/tdl/ir"
 	"github.com/unstoppablemango/tdl/plugin"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files")
-
-// golden is what a case's plan.json holds: the plan and every diagnostic
+// result is what a case's golden file holds: the plan and every diagnostic
 // the backend reports, positions written as file:line:col.
-type golden struct {
+type result struct {
 	Plan        *Plan    `json:"plan"`
 	Diagnostics []string `json:"diagnostics"`
 }
 
 // TestPlan lowers each testdata/<case>/source.tdl with tdl, the way tdl gen
-// does before calling a plugin, and compares the plan with plan.json.
+// does before calling a plugin, and compares the plan with
+// testdata/TestPlan/<case>.golden. go test -update rewrites them.
 func TestPlan(t *testing.T) {
 	tdl, err := exec.LookPath("tdl")
 	if err != nil {
@@ -43,7 +41,7 @@ func TestPlan(t *testing.T) {
 			req := &plugin.Request{Target: Target, Model: lower(t, tdl, dir)}
 			plan, diags := Build(req)
 
-			got := golden{Plan: plan, Diagnostics: []string{}}
+			got := result{Plan: plan, Diagnostics: []string{}}
 			for _, d := range diags {
 				got.Diagnostics = append(got.Diagnostics, format(d))
 			}
@@ -51,22 +49,7 @@ func TestPlan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data = append(data, '\n')
-
-			path := filepath.Join(dir, "plan.json")
-			if *update {
-				if err := os.WriteFile(path, data, 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("%v (run go test -update to create it)", err)
-			}
-			if !bytes.Equal(data, want) {
-				t.Errorf("plan differs from %s (run go test -update to accept):\n%s", path, data)
-			}
+			golden.RequireEqual(t, append(data, '\n'))
 		})
 	}
 }

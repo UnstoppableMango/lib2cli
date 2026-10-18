@@ -1,6 +1,12 @@
 schema = 3
 
 [mod]
+  [mod."github.com/aymanbagabas/go-udiff"]
+    version = "v0.4.1"
+    hash = "sha256-Iyh/4JrZTctG3DAqUNhwLjj+AGxISnS4ujq3gyB330w="
+  [mod."github.com/charmbracelet/x/exp/golden"]
+    version = "v0.1.0"
+    hash = "sha256-1XofCRmAGcPwzAoXH/2hzMA2jJogdfJ+1ah0WCw++7c="
   [mod."github.com/unstoppablemango/tdl"]
     version = "v0.4.13-0.20261016212040-36a578585f6e"
     hash = "sha256-2OXXneVtKx6TDKLCOqfxLNONj4jBrzOpaHu9Gcyvy1c="
