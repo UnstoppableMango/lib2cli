@@ -15,9 +15,10 @@ import (
 )
 
 // TestGo generates the Go project for each fixture bound to a Go module and
-// compares go.mod and main.go with testdata/TestGo/<case>.golden. shim.go
-// is the runtime copied verbatim, so it is checked against the runtime
-// rather than kept in every golden.
+// compares go.mod, lib2cli.json and main.go with
+// testdata/TestGo/<case>.golden. shim.go and generate.go are copied
+// verbatim, so they are checked against their sources rather than kept in
+// every golden.
 func TestGo(t *testing.T) {
 	tdl, err := exec.LookPath("tdl")
 	if err != nil {
@@ -29,9 +30,15 @@ func TestGo(t *testing.T) {
 			files := generate(t, tdl, dir)
 			var b bytes.Buffer
 			for _, f := range files {
-				if f.GetPath() == "shim.go" {
+				switch f.GetPath() {
+				case "shim.go":
 					if string(f.GetContent()) != shimSource() {
 						t.Error("shim.go is not the runtime")
+					}
+					continue
+				case "generate.go":
+					if string(f.GetContent()) != generateSource() {
+						t.Error("generate.go is not the generator")
 					}
 					continue
 				}
@@ -68,8 +75,9 @@ func TestGoBinding(t *testing.T) {
 	}
 }
 
-// TestGoEndToEnd generates the shim for testdata/greet, builds it against
-// the library in testdata/greet/lib, and runs it the way a shell would.
+// TestGoEndToEnd generates the project for testdata/greet, runs go
+// generate and go build against the library in testdata/greet/lib, and
+// runs the shim the way a shell would.
 func TestGoEndToEnd(t *testing.T) {
 	tdl, err := exec.LookPath("tdl")
 	if err != nil {
@@ -98,12 +106,20 @@ func TestGoEndToEnd(t *testing.T) {
 	mod.Close()
 
 	bin := filepath.Join(dir, "greet")
-	build := exec.Command(gobin, "build", "-o", bin, ".")
-	build.Dir = dir
-	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local", "GOWORK=off")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
+	for _, args := range [][]string{{"generate"}, {"vet"}, {"build", "-o", bin, "."}} {
+		cmd := exec.Command(gobin, args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local", "GOWORK=off")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("go %s: %v\n%s", args[0], err, out)
+		}
 	}
+	// What go generate wrote from the library's signatures.
+	src, err := os.ReadFile(filepath.Join(dir, "commands.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("commands.go", func(t *testing.T) { golden.RequireEqual(t, src) })
 
 	tests := []struct {
 		args  []string
@@ -113,6 +129,8 @@ func TestGoEndToEnd(t *testing.T) {
 		err   string
 	}{
 		{args: []string{"greet", "--name", "Ada", "--excited"}, out: "Hello, Ada!"},
+		{args: []string{"repeat", "--word", "ab", "--times", "3"}, out: "ababab"},
+		{args: []string{"repeat", "--word", "ab", "--times", "300"}, code: 2, err: "greet repeat: --times: 300 is out of range\n"},
 		{args: []string{"divide", "--a", "9", "--b", "3"}, out: "3\n"},
 		{args: []string{"divide", "--json"}, stdin: `{"a": 1, "b": 4}`, out: "0.25\n"},
 		{args: []string{"divide", "--a", "1", "--b", "0"}, code: 1, err: "greet divide: division by zero\n"},

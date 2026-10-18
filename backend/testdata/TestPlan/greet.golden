@@ -30,6 +30,30 @@
         }
       },
       {
+        "name": "repeat",
+        "func": "repeat",
+        "whole": false,
+        "params": [
+          {
+            "name": "word",
+            "flag": "word",
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "times",
+            "flag": "times",
+            "type": {
+              "kind": "int"
+            }
+          }
+        ],
+        "result": {
+          "kind": "string"
+        }
+      },
+      {
         "name": "divide",
         "func": "divide",
         "whole": false,

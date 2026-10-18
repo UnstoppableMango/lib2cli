@@ -48,7 +48,7 @@ The convention is the same in every target language. (Q4)
 - The result goes to stdout, raw for string, bytes and `Text`, and as JSON for anything else. VFile messages go to stderr as warnings. (Q27)
 - An error or exception gives a nonzero exit code, with the message on stderr.
 - When a file lists several functions, each one is a subcommand. The binary is named after the library unless a directive overrides it. (Q13)
-- Language idioms are handled without anything in the spec. In Go, an `error` return sets the exit code, `(T, error)` is unwrapped, and a `context.Context` is injected and cancelled on SIGINT. In TS, Promises are awaited and a thrown error sets the exit code. (Q12)
+- Language idioms are handled without anything in the spec. In Go, an `error` return sets the exit code, `(T, error)` is unwrapped, and a `context.Context` is injected and cancelled on SIGINT. The Go shim reads these from the library's types at build time (`go generate`) and writes plain Go for each call, so its runtime uses no reflection. In TS, Promises are awaited and a thrown error sets the exit code. (Q12)
 
 ## Output
 
