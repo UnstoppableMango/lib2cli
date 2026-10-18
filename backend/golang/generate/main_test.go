@@ -134,3 +134,49 @@ func Read(s Name) []byte { return nil }
 		}
 	}
 }
+
+// TestReserved never imports a package under a name commands.go itself
+// declares.
+func TestReserved(t *testing.T) {
+	fset := token.NewFileSet()
+	dep, err := (&types.Config{}).Check("example.com/commands", fset, []*ast.File{parse(t, fset, "package commands\n\ntype T int\n")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imp := importerFunc(func(path string) (*types.Package, error) {
+		if path == dep.Path() {
+			return dep, nil
+		}
+		return importer.Default().Import(path)
+	})
+	pkg, err := (&types.Config{Importer: imp}).Check("example.com/lib", fset, []*ast.File{
+		parse(t, fset, "package lib\n\nimport \"example.com/commands\"\n\nfunc F(t commands.T) {}\n"),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io, err := importer.Default().Import("io")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := generate(&plan{Commands: []command{{Name: "f", Func: "F", Params: []param{{Name: "t", Type: num}}}}}, pkg, io, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `commandspkg2 "example.com/commands"`) {
+		t.Errorf("commands.go imports a package as commands:\n%s", src)
+	}
+}
+
+type importerFunc func(string) (*types.Package, error)
+
+func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+func parse(t *testing.T, fset *token.FileSet, src string) *ast.File {
+	t.Helper()
+	f, err := parser.ParseFile(fset, "x.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}

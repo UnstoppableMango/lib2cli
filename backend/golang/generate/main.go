@@ -76,7 +76,7 @@ func run() error {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return fmt.Errorf("lib2cli.json: %w", err)
 	}
-	taken, err := declared("shim.go")
+	taken, err := declared("shim.go", "main.go")
 	if err != nil {
 		return err
 	}
@@ -91,14 +91,21 @@ func run() error {
 	return os.WriteFile("commands.go", src, 0o644)
 }
 
-// declared is the names a Go file declares at package level, which an
-// import name in commands.go must not reuse.
-func declared(file string) (map[string]bool, error) {
-	f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-	if err != nil {
-		return nil, err
-	}
+// declared is the names Go files declare at package level, which an import
+// name in commands.go must not reuse.
+func declared(files ...string) (map[string]bool, error) {
 	names := map[string]bool{}
+	for _, file := range files {
+		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		addDecls(names, f)
+	}
+	return names, nil
+}
+
+func addDecls(names map[string]bool, f *ast.File) {
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
@@ -118,7 +125,6 @@ func declared(file string) (map[string]bool, error) {
 			}
 		}
 	}
-	return names, nil
 }
 
 // load type-checks nothing itself: it asks the go command for each
@@ -167,7 +173,7 @@ func generate(p *plan, lib, ioPkg *types.Package, taken map[string]bool) ([]byte
 		imports: map[string]string{"context": "context", "io": "io", lib.Path(): "lib"},
 		names:   map[string]string{"context": "context", "io": "io", lib.Path(): lib.Name()},
 		used:    map[string]bool{},
-		taken:   map[string]bool{"context": true, "io": true, "lib": true},
+		taken:   map[string]bool{"context": true, "io": true, "lib": true, "commands": true},
 	}
 	for n := range taken {
 		g.taken[n] = true
