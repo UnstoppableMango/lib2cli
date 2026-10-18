@@ -1,0 +1,33 @@
+// An object's fields must map too, wherever the object appears. A
+// recursive object is checked once.
+package nested
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type Options {
+  id: uuid
+}
+
+type Tree {
+  name: string
+  children: List<Tree>
+}
+
+type Request {
+  options: Options
+}
+
+type TreeRequest {
+  tree: Tree
+}
+
+type Lib {
+  configure: lib.Fn<Request, string>
+  walk: lib.Fn<TreeRequest, Tree>
+  reconfigure: lib.Fn<TreeRequest, Options>
+}
+
+target lib2cli for nested {
+  npm("nested", "1.0.0")
+  Lib => cli
+}

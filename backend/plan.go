@@ -133,6 +133,11 @@ type builder struct {
 	model  *ir.Model
 	target string
 	diags  []*plugin.Diagnostic
+
+	// objects records whether each struct a command uses maps, so its
+	// fields are checked and reported once. A struct still being checked
+	// counts as mapped, which lets a recursive type terminate.
+	objects map[string]bool
 }
 
 // errorf reports an error at pos, which may be nil for the whole model.
@@ -327,7 +332,7 @@ func (b *builder) resolve(id *ir.ID, pos *ir.Position) (Type, bool) {
 		}
 		return b.wrap(KindMap, args[1], pos)
 	case decl.GetStructure() != nil && len(args) == 0:
-		return Type{Kind: KindObject, Name: name}, true
+		return b.object(decl)
 	case decl.GetNewtype() != nil && len(args) == 0:
 		return b.resolve(decl.GetNewtype().GetBase(), pos)
 	case decl.GetAlias() != nil && len(args) == 0:
@@ -336,6 +341,28 @@ func (b *builder) resolve(id *ir.ID, pos *ir.Position) (Type, bool) {
 
 	b.errorf(pos, "%s has no CLI mapping", id.GetName())
 	return Type{}, false
+}
+
+// object maps a struct decoded from JSON, checking that each of its fields
+// maps too.
+func (b *builder) object(decl *ir.Decl) (Type, bool) {
+	name := decl.GetMeta().GetName()
+	t := Type{Kind: KindObject, Name: name}
+	if ok, seen := b.objects[name]; seen {
+		return t, ok
+	}
+	if b.objects == nil {
+		b.objects = map[string]bool{}
+	}
+	b.objects[name] = true
+
+	ok := true
+	for _, f := range decl.Fields() {
+		_, good := b.resolve(f.GetType(), f.GetMeta().GetPosition())
+		ok = ok && good
+	}
+	b.objects[name] = ok
+	return t, ok
 }
 
 // mark says which lib2cli primitive a type is, if any: one imported from

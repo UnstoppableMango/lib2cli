@@ -1,0 +1,31 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "nested",
+    "version": "1.0.0",
+    "bin": "nested",
+    "commands": [
+      {
+        "name": "walk",
+        "func": "walk",
+        "params": [
+          {
+            "name": "tree",
+            "flag": "tree",
+            "type": {
+              "kind": "object",
+              "name": "Tree"
+            }
+          }
+        ],
+        "result": {
+          "kind": "object",
+          "name": "Tree"
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    "source.tdl:8:3: error: uuid has no CLI mapping"
+  ]
+}
