@@ -1,0 +1,69 @@
+// The plan lib2cli builds from a model before generating anything. The Go
+// types in plan_gen.go are generated from this file by tdl's go backend;
+// edit this file and run `tdl gen backend/plan.tdl`, never the Go.
+package lib2cli.plan
+
+/// Plan is what lib2cli will generate for one model: a binary bound to one
+/// library, with a subcommand per function.
+type Plan {
+  /// Lang is the target language, "go" or "ts", picked by the binding
+  /// directive.
+  lang: string
+
+  /// Package is the Go module or npm package the functions live in.
+  package: string
+
+  /// Version is the exact version the generated project pins.
+  version: string
+
+  /// Bin is the generated binary's name.
+  bin: string
+
+  commands: [Command]
+}
+
+/// Command is one function, called as a subcommand.
+type Command {
+  /// Name is the subcommand, the field's name in kebab case.
+  name: string
+
+  /// Func is the library function the command calls.
+  func: string
+
+  /// Whole says the function takes the request as one argument rather
+  /// than its fields as positional parameters.
+  whole: bool
+
+  /// Params are the request's fields, in order. Each is a flag.
+  params: [Param]
+
+  result: Type
+}
+
+/// Param is one field of a command's request.
+type Param {
+  name: string
+  flag: string
+  type: Type
+}
+
+/// Kind is a type in lib2cli's language-neutral set.
+enum Kind { string int float bool bytes path stream text list map object option }
+
+/// Type is a parameter or result type.
+type Type {
+  kind: Kind
+
+  /// Name is the declaration an object decodes into.
+  name: string?
+
+  /// Elem is the element of a list or map, or the value of an option.
+  elem: Type?
+}
+
+target go for lib2cli.plan {
+  out(".")
+  package("github.com/unstoppablemango/lib2cli/backend")
+  file("plan_gen.go")
+  json
+}

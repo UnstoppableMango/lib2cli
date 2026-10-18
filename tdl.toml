@@ -1,0 +1,3 @@
+[lossy.go]
+# backend/plan.tdl's package is lib2cli.plan, which Go spells backend.
+allow = ["lossy.name"]

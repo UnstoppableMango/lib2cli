@@ -50,5 +50,19 @@ in
             grep -q 'planned 1 command(s) for @mdx-js/mdx' log
             touch $out
           '';
+
+      # backend/plan_gen.go is what tdl's go backend makes of backend/plan.tdl.
+      checks.gen-plan =
+        pkgs.runCommand "lib2cli-gen-plan"
+          {
+            nativeBuildInputs = [ pkgs.tdl ];
+          }
+          ''
+            cp ${../tdl.toml} tdl.toml
+            mkdir backend
+            cp ${../backend/plan.tdl} ${../backend/plan_gen.go} ${../backend/.tdl-output} backend/
+            tdl gen --verify backend/plan.tdl
+            touch $out
+          '';
     };
 }

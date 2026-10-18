@@ -8,6 +8,7 @@
       {
         "name": "convert-file",
         "func": "ConvertFile",
+        "whole": false,
         "params": [
           {
             "name": "inputPath",

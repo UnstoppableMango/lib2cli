@@ -8,6 +8,7 @@
       {
         "name": "walk",
         "func": "walk",
+        "whole": false,
         "params": [
           {
             "name": "tree",

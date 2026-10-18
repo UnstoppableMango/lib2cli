@@ -11,78 +11,6 @@ import (
 	"github.com/unstoppablemango/tdl/plugin"
 )
 
-// Plan is what lib2cli will generate for one model: a binary bound to one
-// library, with a subcommand per function.
-type Plan struct {
-	// Lang is the target language, "go" or "ts", picked by the binding
-	// directive.
-	Lang string `json:"lang"`
-
-	// Package is the Go module or npm package the functions live in, and
-	// Version the exact version the generated project pins.
-	Package string `json:"package"`
-	Version string `json:"version"`
-
-	// Bin is the generated binary's name.
-	Bin string `json:"bin"`
-
-	Commands []Command `json:"commands"`
-}
-
-// Command is one function, called as a subcommand.
-type Command struct {
-	// Name is the subcommand, the field's name in kebab case.
-	Name string `json:"name"`
-
-	// Func is the library function the command calls.
-	Func string `json:"func"`
-
-	// Whole says the function takes the request as one argument rather
-	// than its fields as positional parameters.
-	Whole bool `json:"whole,omitempty"`
-
-	// Params are the request's fields, in order. Each is a flag.
-	Params []Param `json:"params"`
-
-	Result Type `json:"result"`
-}
-
-// Param is one field of a command's request.
-type Param struct {
-	Name string `json:"name"`
-	Flag string `json:"flag"`
-	Type Type   `json:"type"`
-}
-
-// Kind is a type in lib2cli's language-neutral set.
-type Kind string
-
-const (
-	KindString Kind = "string"
-	KindInt    Kind = "int"
-	KindFloat  Kind = "float"
-	KindBool   Kind = "bool"
-	KindBytes  Kind = "bytes"
-	KindPath   Kind = "path"
-	KindStream Kind = "stream"
-	KindText   Kind = "text"
-	KindList   Kind = "list"
-	KindMap    Kind = "map"
-	KindObject Kind = "object"
-	KindOption Kind = "option"
-)
-
-// Type is a parameter or result type.
-type Type struct {
-	Kind Kind `json:"kind"`
-
-	// Name is the declaration an object decodes into.
-	Name string `json:"name,omitempty"`
-
-	// Elem is the element of a list or map, or the value of an option.
-	Elem *Type `json:"elem,omitempty"`
-}
-
 // primitives maps TDL's standard prelude primitives onto the neutral set.
 var primitives = map[string]Kind{
 	"string":  KindString,
@@ -347,7 +275,7 @@ func (b *builder) resolve(id *ir.ID, pos *ir.Position) (Type, bool) {
 // maps too.
 func (b *builder) object(decl *ir.Decl) (Type, bool) {
 	name := decl.GetMeta().GetName()
-	t := Type{Kind: KindObject, Name: name}
+	t := Type{Kind: KindObject, Name: &name}
 	if ok, seen := b.objects[name]; seen {
 		return t, ok
 	}

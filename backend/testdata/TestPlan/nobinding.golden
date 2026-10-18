@@ -8,6 +8,7 @@
       {
         "name": "greet",
         "func": "greet",
+        "whole": false,
         "params": [
           {
             "name": "name",

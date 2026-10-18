@@ -39,6 +39,7 @@ Subcommands and flags are the field names in kebab case, so two fields that keba
 nix develop        # go, gomod2nix, tdl
 go test ./...      # golden tests; needs tdl on PATH
 go test ./... -update
+tdl gen backend/plan.tdl   # after editing the plan types
 gomod2nix generate --outdir nix   # after go.mod changes
 nix flake check
 ```
