@@ -1,11 +1,11 @@
 package nobinding
 
-import "../../../prelude/lib2cli.tdl" as lib2cli
+import "../../../prelude/lib2cli.tdl" as lib
 
 type Request { name: string }
 
 type Lib {
-  greet: lib2cli.Fn<Request, string>
+  greet: lib.Fn<Request, string>
 }
 
 target lib2cli for nobinding {

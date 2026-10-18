@@ -1,6 +1,6 @@
 package mdx
 
-import "../../../prelude/lib2cli.tdl" as lib2cli
+import "../../../prelude/lib2cli.tdl" as lib
 
 type CompileOptions {
   jsx: bool?
@@ -8,12 +8,12 @@ type CompileOptions {
 }
 
 type CompileRequest {
-  file: lib2cli.Text
+  file: lib.Text
   options: CompileOptions?
 }
 
 type Mdx {
-  compile: lib2cli.Fn<CompileRequest, lib2cli.Text>
+  compile: lib.Fn<CompileRequest, lib.Text>
 }
 
 target lib2cli for mdx {

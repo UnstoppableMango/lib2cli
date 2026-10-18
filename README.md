@@ -13,14 +13,14 @@ See [docs/design.md](docs/design.md) for where it is going.
 ```tdl
 package mdx
 
-import "lib2cli/prelude/lib2cli.tdl" as _
+import "lib2cli/prelude/lib2cli.tdl" as lib
 
 type CompileRequest {
-  file: Text
+  file: lib.Text
 }
 
 type Mdx {
-  compile: Fn<CompileRequest, Text>
+  compile: lib.Fn<CompileRequest, lib.Text>
 }
 
 target lib2cli for mdx {
@@ -29,7 +29,7 @@ target lib2cli for mdx {
 }
 ```
 
-`Fn`, `Text`, `Path` and `Stream` come from [prelude/lib2cli.tdl](prelude/lib2cli.tdl), imported relative to the file.
+`Fn`, `Text`, `Path` and `Stream` come from [prelude/lib2cli.tdl](prelude/lib2cli.tdl), imported relative to the file; the examples import it as `lib`.
 Each field of the type tagged `cli` is a command; `Type.field => func("name")` names the real function, `Type.field => whole` passes the request as one argument, and `bin("name")` names the binary.
 
 ## Development

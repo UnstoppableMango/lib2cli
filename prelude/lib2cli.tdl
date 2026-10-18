@@ -2,9 +2,9 @@
 // with. Import it under any alias; lib2cli knows these by their package,
 // so the target block does not tag them:
 //
-//   import "path/to/lib2cli.tdl" as lib2cli
+//   import "path/to/lib2cli.tdl" as lib
 //
-//   type Lib { compile: lib2cli.Fn<CompileRequest, lib2cli.Text> }
+//   type Lib { compile: lib.Fn<CompileRequest, lib.Text> }
 //
 //   target lib2cli for mypkg {
 //     npm("@scope/pkg", "1.2.3")

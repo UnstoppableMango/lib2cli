@@ -2,7 +2,7 @@
 // locally and tagged instead of imported.
 package gofix
 
-import "../../../prelude/lib2cli.tdl" as l
+import "../../../prelude/lib2cli.tdl" as lib
 
 primitive Path
 primitive Stream
@@ -30,8 +30,8 @@ type ReadRequest {
 }
 
 type Tool {
-  convertFile: l.Fn<ConvertRequest, Options>
-  read: l.Fn<ReadRequest, Stream>
+  convertFile: lib.Fn<ConvertRequest, Options>
+  read: lib.Fn<ReadRequest, Stream>
 }
 
 target lib2cli for gofix {

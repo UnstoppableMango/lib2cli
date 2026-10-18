@@ -1,6 +1,6 @@
 package unsupported
 
-import "../../../prelude/lib2cli.tdl" as lib2cli
+import "../../../prelude/lib2cli.tdl" as lib
 
 type Request {
   id: uuid
@@ -8,7 +8,7 @@ type Request {
 }
 
 type Lib {
-  lookup: lib2cli.Fn<Request, string>
+  lookup: lib.Fn<Request, string>
   notAFunction: string
 }
 
