@@ -21,6 +21,11 @@
       inputs.flake-utils.inputs.systems.follows = "systems";
     };
 
+    globset = {
+      url = "github:pdtpartners/globset";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
+
     # Pinned to the same commit as go.mod's github.com/unstoppablemango/tdl.
     tdl = {
       url = "github:UnstoppableMango/tdl";

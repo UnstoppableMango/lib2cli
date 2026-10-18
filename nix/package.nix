@@ -1,5 +1,6 @@
 {
   buildGoApplication,
+  globset,
   lib,
   go,
   tdl,
@@ -9,7 +10,17 @@ buildGoApplication {
   pname = "lib2cli";
   inherit version go;
 
-  src = lib.cleanSource ../.;
+  # The Go sources, plus the fixtures and the lib2cli module the tests read.
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = globset.globs ../. [
+      "go.mod"
+      "go.sum"
+      "**/*.go"
+      "backend/testdata/**"
+      "lib/*.tdl"
+    ];
+  };
   modules = ./gomod2nix.toml;
 
   subPackages = [ "cmd/tdl-gen-lib2cli" ];

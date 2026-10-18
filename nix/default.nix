@@ -7,7 +7,7 @@ let
   overlay = import ./overlay.nix {
     inherit version;
     inherit (inputs.nixpkgs) lib;
-    inherit (inputs) gomod2nix;
+    inherit (inputs) globset gomod2nix;
   };
 in
 {
