@@ -35,6 +35,8 @@ type Backend struct{}
 
 var str = []ir.LiteralKind{ir.LiteralKind_LITERAL_KIND_STRING}
 
+// Describe names the backend and declares its directives, which tdl checks
+// a target block against.
 func (Backend) Describe() plugin.Description {
 	block := plugin.On(plugin.OnBlock)
 	decl := plugin.On(plugin.OnDecl)
@@ -58,6 +60,8 @@ func (Backend) Describe() plugin.Description {
 	}
 }
 
+// Generate plans the model and reports the plan's diagnostics. It writes
+// no files yet.
 func (Backend) Generate(_ context.Context, req *plugin.Request) (*plugin.Response, error) {
 	plan, diags := Build(req)
 	if !hasErrors(diags) {
@@ -71,6 +75,7 @@ func (Backend) Generate(_ context.Context, req *plugin.Request) (*plugin.Respons
 	return &plugin.Response{Diagnostics: diags}, nil
 }
 
+// hasErrors says whether any diagnostic is an error.
 func hasErrors(diags []*plugin.Diagnostic) bool {
 	for _, d := range diags {
 		if d.GetSeverity() == plugin.Severity_SEVERITY_ERROR {

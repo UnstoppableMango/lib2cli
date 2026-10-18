@@ -132,6 +132,7 @@ type builder struct {
 	diags  []*plugin.Diagnostic
 }
 
+// errorf reports an error at pos, which may be nil for the whole model.
 func (b *builder) errorf(pos *ir.Position, format string, args ...any) {
 	b.diags = append(b.diags, &plugin.Diagnostic{
 		Severity: plugin.Severity_SEVERITY_ERROR,
@@ -140,6 +141,8 @@ func (b *builder) errorf(pos *ir.Position, format string, args ...any) {
 	})
 }
 
+// plan builds the whole plan: the binding, then a command per Fn field of
+// each type tagged cli.
 func (b *builder) plan() *Plan {
 	p := &Plan{Commands: []Command{}}
 	b.bind(p)
@@ -296,7 +299,10 @@ func (b *builder) resolve(id *ir.ID, pos *ir.Position) (Type, bool) {
 		return b.wrap(KindOption, args[0], pos)
 	case name == "Map" && len(args) == 2:
 		key, ok := b.resolve(args[0], pos)
-		if ok && key.Kind != KindString {
+		if !ok {
+			return Type{}, false
+		}
+		if key.Kind != KindString {
 			b.errorf(pos, "%s has no CLI mapping: a map's key must be a string", id.GetName())
 			return Type{}, false
 		}
@@ -335,11 +341,13 @@ func (b *builder) mark(t *ir.Type) string {
 	return ""
 }
 
+// wrap resolves elem and wraps it in a list, map or option.
 func (b *builder) wrap(kind Kind, elem *ir.ID, pos *ir.Position) (Type, bool) {
 	e, ok := b.resolve(elem, pos)
 	return Type{Kind: kind, Elem: &e}, ok
 }
 
+// tagged says whether dirs hold this target's directive name.
 func (b *builder) tagged(dirs []*ir.Directive, name string) bool {
 	for _, d := range plugin.Directives(b.target, dirs) {
 		if d.GetName() == name {
@@ -349,6 +357,7 @@ func (b *builder) tagged(dirs []*ir.Directive, name string) bool {
 	return false
 }
 
+// arg is a directive's i-th argument as text, or "" if it has none.
 func arg(d *ir.Directive, i int) string {
 	if args := d.GetArgs(); i < len(args) {
 		return args[i].GetText()

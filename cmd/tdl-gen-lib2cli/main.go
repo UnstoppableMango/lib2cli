@@ -10,6 +10,7 @@ import (
 	"github.com/unstoppablemango/tdl/plugin"
 )
 
+// main serves the backend over tdl's plugin protocol.
 func main() {
 	if err := plugin.Serve(backend.Backend{}); err != nil {
 		fmt.Fprintln(os.Stderr, err)

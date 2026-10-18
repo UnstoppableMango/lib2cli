@@ -93,6 +93,7 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+// lower runs tdl ir on dir/source.tdl and decodes the model it prints.
 func lower(t *testing.T, tdl, dir string) *ir.Model {
 	t.Helper()
 	cmd := exec.Command(tdl, "ir", "--format", "json", "source.tdl")
@@ -109,6 +110,7 @@ func lower(t *testing.T, tdl, dir string) *ir.Model {
 	return model
 }
 
+// format writes a diagnostic the way tdl prints one.
 func format(d *plugin.Diagnostic) string {
 	sev := "error"
 	if d.GetSeverity() == plugin.Severity_SEVERITY_WARNING {
