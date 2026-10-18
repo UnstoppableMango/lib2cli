@@ -53,6 +53,21 @@ func TestGoUnexported(t *testing.T) {
 	}
 }
 
+// TestGoBinding reports a binding go.mod could not hold.
+func TestGoBinding(t *testing.T) {
+	for _, tt := range []struct{ pkg, version, bin, want string }{
+		{"example.com/x", "1.0.0", "x", "is not a Go module version"},
+		{"example.com/x/v2", "v1.0.0", "x", "is not a Go module version"},
+		{"not a path", "v1.0.0", "x", "is not a Go module version"},
+		{"example.com/x", "v1.0.0", "my tool", "cannot name a Go binary"},
+	} {
+		_, diags := goFiles(&Plan{Lang: "go", Package: tt.pkg, Version: tt.version, Bin: tt.bin, Commands: []Command{}})
+		if len(diags) != 1 || !strings.Contains(diags[0].GetMessage(), tt.want) {
+			t.Errorf("go(%q, %q) bin(%q): got %v, want one diagnostic saying %q", tt.pkg, tt.version, tt.bin, diags, tt.want)
+		}
+	}
+}
+
 // TestGoEndToEnd generates the shim for testdata/greet, builds it against
 // the library in testdata/greet/lib, and runs it the way a shell would.
 func TestGoEndToEnd(t *testing.T) {

@@ -142,6 +142,8 @@ func TestExecute(t *testing.T) {
 		{name: "json mode", args: []string{"greet", "--json"}, stdin: `{"name":"Ada","excited":true}`, out: "Hello, Ada!"},
 		{name: "missing flag", args: []string{"greet"}, code: exitUsage, err: "--name is required"},
 		{name: "repeated scalar", args: []string{"greet", "--name=a", "--name=b"}, code: exitUsage, err: "more than once"},
+		{name: "json missing field", args: []string{"greet", "--json"}, stdin: `{"excited":true}`, code: exitUsage, err: "name is required"},
+		{name: "json null field", args: []string{"greet", "--json"}, stdin: `{"name":null}`, code: exitUsage, err: "name is required"},
 		{name: "json and flags", args: []string{"greet", "--json", "--name=a"}, code: exitUsage, err: "cannot be combined"},
 		{name: "context and error", args: []string{"divide", "--a=7", "--b=2"}, out: "3\n"},
 		{name: "error exits", args: []string{"divide", "--a=7", "--b=0"}, code: exitError, err: "division by zero"},

@@ -56,10 +56,15 @@ const (
 	exitUsage = 2 // the command line was wrong
 )
 
-// run executes the command line against cmds and exits. SIGINT cancels the
-// context a function is given.
+// run executes the command line against cmds and exits. The first SIGINT
+// cancels the context a function is given; a second one, which a function
+// ignoring its context would otherwise never see, ends the process.
 func run(bin string, cmds []command) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 	code := execute(ctx, bin, cmds, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
@@ -266,12 +271,20 @@ func (c command) fromFlags(in *inputs, raw []*values) ([]any, error) {
 				return nil, fmt.Errorf("--%s: %w", p.flag, err)
 			}
 			vals[i] = v
-		case p.typ.kind == "option", p.typ.kind == "bool":
-		default:
+		case !omittable(p.typ):
 			return nil, fmt.Errorf("--%s is required", p.flag)
 		}
 	}
 	return vals, nil
+}
+
+// omittable says whether a parameter may be left out.
+func omittable(t typ) bool {
+	switch t.kind {
+	case "option", "bool", "list", "map":
+		return true
+	}
+	return false
 }
 
 // parse converts one flag occurrence.
@@ -299,7 +312,8 @@ func parse(in *inputs, t typ, s string) (any, error) {
 }
 
 // fromJSON reads the arguments as one object from stdin, keyed by field
-// name. A missing field is its zero value.
+// name. As with flags, a missing or null optional, list, map or bool field
+// is its zero value, and any other is an error.
 func (c command) fromJSON(in *inputs) ([]any, error) {
 	var obj map[string]json.RawMessage
 	if err := json.NewDecoder(in.stdin).Decode(&obj); err != nil {
@@ -309,6 +323,9 @@ func (c command) fromJSON(in *inputs) ([]any, error) {
 	for i, p := range c.params {
 		data, ok := obj[p.name]
 		if !ok || string(data) == "null" {
+			if !omittable(p.typ) {
+				return nil, fmt.Errorf("%s is required", p.name)
+			}
 			continue
 		}
 		v, err := fromRaw(in, p.typ, data)
