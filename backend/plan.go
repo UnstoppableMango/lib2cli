@@ -116,6 +116,9 @@ var markKinds = map[string]Kind{
 	dirStream: KindStream,
 }
 
+// reserved are the flags every generated command defines for itself.
+var reserved = map[string]bool{"json": true, "help": true}
+
 // Build plans the shim for a request, reporting every problem it finds.
 func Build(req *plugin.Request) (*Plan, []*plugin.Diagnostic) {
 	target := req.GetTarget()
@@ -148,6 +151,7 @@ func (b *builder) plan() *Plan {
 	b.bind(p)
 
 	found := false
+	seen := map[string]string{} // subcommand -> the field it came from
 	for _, d := range b.model.GetDecls() {
 		if !b.tagged(d.GetDirectives(), dirCli) {
 			continue
@@ -158,6 +162,13 @@ func (b *builder) plan() *Plan {
 			continue
 		}
 		for _, f := range d.Fields() {
+			sub := kebab(f.GetMeta().GetName())
+			name := d.GetMeta().GetName() + "." + f.GetMeta().GetName()
+			if prev, dup := seen[sub]; dup {
+				b.errorf(f.GetMeta().GetPosition(), "%s and %s are both the subcommand %s", prev, name, sub)
+				continue
+			}
+			seen[sub] = name
 			if c, ok := b.command(f); ok {
 				p.Commands = append(p.Commands, c)
 			}
@@ -252,14 +263,22 @@ func (b *builder) command(f *ir.Field) (Command, bool) {
 	}
 
 	ok := true
+	flags := map[string]string{} // flag -> the field it came from
 	for _, rf := range reqDecl.Fields() {
-		pt, good := b.resolve(rf.GetType(), rf.GetMeta().GetPosition())
+		fname, fpos := rf.GetMeta().GetName(), rf.GetMeta().GetPosition()
+		flag := kebab(fname)
+		if reserved[flag] {
+			b.errorf(fpos, "%s is the flag --%s, which every command reserves", fname, flag)
+			ok = false
+		} else if prev, dup := flags[flag]; dup {
+			b.errorf(fpos, "%s and %s are both the flag --%s", prev, fname, flag)
+			ok = false
+		}
+		flags[flag] = fname
+
+		pt, good := b.resolve(rf.GetType(), fpos)
 		ok = ok && good
-		c.Params = append(c.Params, Param{
-			Name: rf.GetMeta().GetName(),
-			Flag: kebab(rf.GetMeta().GetName()),
-			Type: pt,
-		})
+		c.Params = append(c.Params, Param{Name: fname, Flag: flag, Type: pt})
 	}
 
 	result, good := b.resolve(t.GetArgs()[1], pos)
