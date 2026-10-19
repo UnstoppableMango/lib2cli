@@ -1,12 +1,14 @@
 // Package shim is the runtime every generated Go shim carries. lib2cli
-// copies this file into the generated project as package main, beside a
-// main.go holding the command table, so the shim depends only on the
-// library it wraps and the standard library.
+// copies this file into the generated project as package main, beside
+// main.go and the generator that writes commands.go.
 //
-// The table says what the TDL model declares. Everything the model leaves
-// to the language is read from the function's own signature when the shim
-// runs: an injected context.Context, an error return setting the exit
-// code, and the Go types each value decodes into.
+// The runtime only knows lib2cli's neutral types. It turns a command's
+// flags into one JSON object keyed by parameter name, or takes that object
+// from stdin with --json, and hands it to the command's call. Each call is
+// generated at build time from the function's real signature: it decodes
+// the object with encoding/json into a struct of the function's own
+// parameter types, calls the function, and writes the result. Nothing here
+// uses reflect.
 package shim
 
 import (
@@ -18,12 +20,11 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"reflect"
 	"strconv"
 	"strings"
 )
 
-// typ is a parameter or result type in lib2cli's neutral set.
+// typ is a parameter type in lib2cli's neutral set.
 type typ struct {
 	kind string
 	elem *typ
@@ -38,21 +39,28 @@ type param struct {
 
 // command is one library function, called as a subcommand.
 type command struct {
-	name string
-	fn   any
-
-	// whole passes the request as one struct rather than its fields as
-	// positional arguments.
-	whole bool
-
+	name   string
 	params []param
-	result typ
+
+	// call decodes args, a JSON object keyed by parameter name, into the
+	// function's types, calls it, and writes its result to out. It opens
+	// stream parameters from in.
+	call func(ctx context.Context, args []byte, in *inputs, out io.Writer) error
 }
+
+// argError is an argument call could not use: parameter param's, or
+// with param -1, the object's.
+type argError struct {
+	param int
+	err   error
+}
+
+func (e argError) Error() string { return e.err.Error() }
 
 // Exit codes.
 const (
 	exitOK    = 0
-	exitError = 1 // the function failed, or its signature did not fit
+	exitError = 1 // the function failed
 	exitUsage = 2 // the command line was wrong
 )
 
@@ -128,7 +136,7 @@ func (c command) execute(ctx context.Context, name string, args []string, stdin 
 	in := &inputs{stdin: stdin}
 	defer in.close()
 
-	var vals []any
+	var obj []byte
 	var err error
 	if *asJSON {
 		for i, p := range c.params {
@@ -137,27 +145,51 @@ func (c command) execute(ctx context.Context, name string, args []string, stdin 
 				return exitUsage
 			}
 		}
-		vals, err = c.fromJSON(in)
+		in.stdinRead = true
+		obj, err = c.fromJSON(stdin)
 	} else {
-		vals, err = c.fromFlags(in, raw)
+		obj, err = c.fromFlags(raw)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return exitUsage
 	}
 
-	out, err := c.call(ctx, vals)
-	if err != nil {
+	err = c.call(ctx, obj, in, stdout)
+	var arg argError
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.As(err, &arg):
+		fmt.Fprintf(stderr, "%s: %s\n", name, c.describeArg(arg, *asJSON))
+		return exitUsage
+	default:
 		fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return exitError
 	}
-	if out.IsValid() {
-		if err := write(stdout, c.result, out); err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", name, err)
-			return exitError
+}
+
+// describeArg says which parameter an argError is about, as its flag or,
+// with --json, its field.
+func (c command) describeArg(e argError, asJSON bool) string {
+	i, msg := e.param, e.err.Error()
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(e.err, &typeErr) {
+		field, _, _ := strings.Cut(typeErr.Field, ".")
+		for j, p := range c.params {
+			if p.name == field {
+				i = j
+			}
 		}
+		msg = fmt.Sprintf("%s is not a valid %s", typeErr.Value, typeErr.Type)
 	}
-	return exitOK
+	switch {
+	case i < 0:
+		return msg
+	case asJSON:
+		return c.params[i].name + ": " + msg
+	}
+	return "--" + c.params[i].flag + ": " + msg
 }
 
 // values collects every occurrence of one flag.
@@ -206,13 +238,15 @@ func describe(t typ) string {
 // inputs opens the files stream parameters name and closes them after the
 // call.
 type inputs struct {
-	stdin  io.Reader
-	opened []io.Closer
+	stdin     io.Reader
+	stdinRead bool // stdin held the --json arguments
+	opened    []io.Closer
 }
 
-func (in *inputs) open(name string, allowStdin bool) (io.Reader, error) {
+// open opens a stream parameter: the file name names, or stdin for -.
+func (in *inputs) open(name string) (io.Reader, error) {
 	if name == "-" {
-		if !allowStdin {
+		if in.stdinRead {
 			return nil, errors.New("stdin holds the --json arguments, so a stream cannot read it")
 		}
 		return in.stdin, nil
@@ -231,51 +265,96 @@ func (in *inputs) close() {
 	}
 }
 
-// fromFlags converts each flag's occurrences to a value. A missing
-// optional, list or map flag, or a missing bool, is its zero value; any
-// other missing flag is an error.
-func (c command) fromFlags(in *inputs, raw []*values) ([]any, error) {
-	vals := make([]any, len(c.params))
+// fromFlags writes the flags as the JSON object a call decodes. A missing
+// bool, option, list or map is left out, so it decodes as its zero value;
+// any other missing flag is an error.
+func (c command) fromFlags(raw []*values) ([]byte, error) {
+	obj := make(map[string]any, len(c.params))
 	for i, p := range c.params {
 		set := raw[i].set
+		var v any
+		var err error
 		switch {
-		case p.typ.kind == "list":
-			list := make([]any, 0, len(set))
-			for _, s := range set {
-				v, err := parse(in, *p.typ.elem, s)
-				if err != nil {
-					return nil, fmt.Errorf("--%s: %w", p.flag, err)
-				}
-				list = append(list, v)
+		case len(set) == 0:
+			if !omittable(p.typ) {
+				return nil, fmt.Errorf("--%s is required", p.flag)
 			}
-			vals[i] = list
-		case p.typ.kind == "map":
-			m := make(map[string]any, len(set))
-			for _, s := range set {
-				k, rest, ok := strings.Cut(s, "=")
-				if !ok {
-					return nil, fmt.Errorf("--%s: %q is not key=value", p.flag, s)
-				}
-				v, err := parse(in, *p.typ.elem, rest)
-				if err != nil {
-					return nil, fmt.Errorf("--%s: %w", p.flag, err)
-				}
-				m[k] = v
-			}
-			vals[i] = m
+			continue
+		case p.typ.kind == "list" || p.typ.kind == "map":
+			v, err = repeated(p.typ, set)
 		case len(set) > 1:
 			return nil, fmt.Errorf("--%s is given more than once", p.flag)
-		case len(set) == 1:
-			v, err := parse(in, p.typ, set[0])
-			if err != nil {
-				return nil, fmt.Errorf("--%s: %w", p.flag, err)
-			}
-			vals[i] = v
-		case !omittable(p.typ):
-			return nil, fmt.Errorf("--%s is required", p.flag)
+		default:
+			v, err = literal(p.typ, set[0])
 		}
+		if err != nil {
+			return nil, fmt.Errorf("--%s: %w", p.flag, err)
+		}
+		obj[p.name] = v
 	}
-	return vals, nil
+	return json.Marshal(obj)
+}
+
+// repeated writes every occurrence of a list flag as a JSON array, or of
+// a map flag, each key=value, as an object.
+func repeated(t typ, set []string) (any, error) {
+	list := make([]json.RawMessage, len(set))
+	m := make(map[string]json.RawMessage, len(set))
+	for i, s := range set {
+		var k string
+		if t.kind == "map" {
+			var ok bool
+			if k, s, ok = strings.Cut(s, "="); !ok {
+				return nil, fmt.Errorf("%q is not key=value", k)
+			}
+		}
+		v, err := literal(*t.elem, s)
+		if err != nil {
+			return nil, err
+		}
+		list[i], m[k] = v, v
+	}
+	if t.kind == "map" {
+		return m, nil
+	}
+	return list, nil
+}
+
+// literal writes one flag occurrence as JSON. A list, map or object is
+// given as JSON already; a stream is the name of the file to open.
+func literal(t typ, s string) (json.RawMessage, error) {
+	switch t.kind {
+	case "option":
+		return literal(*t.elem, s)
+	case "int":
+		// The generated call range-checks the value against the
+		// function's own type, which may be a uint64.
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return json.RawMessage(strconv.FormatInt(n, 10)), nil
+		}
+		if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+			return json.RawMessage(strconv.FormatUint(n, 10)), nil
+		}
+		return nil, fmt.Errorf("%q is not an integer", s)
+	case "float":
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a number", s)
+		}
+		return json.Marshal(f)
+	case "bool":
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a bool", s)
+		}
+		return json.Marshal(b)
+	case "object", "list", "map":
+		if !json.Valid([]byte(s)) {
+			return nil, fmt.Errorf("%q is not JSON", s)
+		}
+		return json.RawMessage(s), nil
+	}
+	return json.Marshal(s)
 }
 
 // omittable says whether a parameter may be left out.
@@ -287,278 +366,60 @@ func omittable(t typ) bool {
 	return false
 }
 
-// parse converts one flag occurrence.
-func parse(in *inputs, t typ, s string) (any, error) {
-	switch t.kind {
-	case "option":
-		return parse(in, *t.elem, s)
-	case "int":
-		return strconv.ParseInt(s, 10, 64)
-	case "float":
-		return strconv.ParseFloat(s, 64)
-	case "bool":
-		return strconv.ParseBool(s)
-	case "bytes":
-		return []byte(s), nil
-	case "stream":
-		return in.open(s, true)
-	case "object", "list", "map":
-		if !json.Valid([]byte(s)) {
-			return nil, fmt.Errorf("%q is not JSON", s)
-		}
-		return json.RawMessage(s), nil
-	}
-	return s, nil
-}
-
-// fromJSON reads the arguments as one object from stdin, keyed by field
-// name. As with flags, a missing or null optional, list, map or bool field
-// is its zero value, and any other is an error.
-func (c command) fromJSON(in *inputs) ([]any, error) {
-	var obj map[string]json.RawMessage
-	if err := json.NewDecoder(in.stdin).Decode(&obj); err != nil {
+// fromJSON reads the arguments as one object from stdin. As with flags, a
+// missing or null bool, option, list or map field decodes as its zero
+// value, and any other is an error.
+func (c command) fromJSON(stdin io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
 		return nil, fmt.Errorf("reading --json arguments: %w", err)
 	}
-	vals := make([]any, len(c.params))
-	for i, p := range c.params {
-		data, ok := obj[p.name]
-		if !ok || string(data) == "null" {
-			if !omittable(p.typ) {
-				return nil, fmt.Errorf("%s is required", p.name)
-			}
-			continue
-		}
-		v, err := fromRaw(in, p.typ, data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p.name, err)
-		}
-		vals[i] = v
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("reading --json arguments: %w", err)
 	}
-	return vals, nil
-}
-
-// fromRaw converts a JSON value where JSON alone cannot: a stream is
-// opened from the path it names, and bytes are the string's bytes.
-func fromRaw(in *inputs, t typ, data json.RawMessage) (any, error) {
-	switch t.kind {
-	case "option":
-		return fromRaw(in, *t.elem, data)
-	case "stream", "bytes":
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return nil, err
+	for _, p := range c.params {
+		if v, ok := obj[p.name]; (!ok || string(v) == "null") && !omittable(p.typ) {
+			return nil, fmt.Errorf("%s is required", p.name)
 		}
-		if t.kind == "bytes" {
-			return []byte(s), nil
-		}
-		return in.open(s, false)
 	}
 	return data, nil
 }
 
-var (
-	contextType = reflect.TypeFor[context.Context]()
-	errorType   = reflect.TypeFor[error]()
-)
+// The helpers below are what generated calls decode and write with.
 
-// call calls the function with vals. It injects ctx when the function's
-// first parameter is a context.Context, and returns the function's error
-// when its last result is one. The returned value is invalid when the
-// function returns nothing else.
-func (c command) call(ctx context.Context, vals []any) (reflect.Value, error) {
-	fn := reflect.ValueOf(c.fn)
-	ft := fn.Type()
-	if ft.IsVariadic() {
-		return reflect.Value{}, errors.New("variadic functions are not supported")
+// decode decodes a call's arguments into req.
+func decode(args []byte, req any) error {
+	if err := json.Unmarshal(args, req); err != nil {
+		return argError{-1, err}
 	}
-
-	var ins []reflect.Value
-	first := 0
-	if ft.NumIn() > 0 && ft.In(0) == contextType {
-		ins = append(ins, reflect.ValueOf(ctx))
-		first = 1
-	}
-
-	want := len(vals)
-	if c.whole {
-		want = 1
-	}
-	if ft.NumIn()-first != want {
-		return reflect.Value{}, fmt.Errorf("the function takes %d argument(s), but the model gives it %d", ft.NumIn()-first, want)
-	}
-
-	if c.whole {
-		v, err := c.request(ft.In(first), vals)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		ins = append(ins, v)
-	} else {
-		for i, p := range c.params {
-			v, err := convert(ft.In(first+i), vals[i])
-			if err != nil {
-				return reflect.Value{}, fmt.Errorf("%s: %w", p.name, err)
-			}
-			ins = append(ins, v)
-		}
-	}
-
-	outs := ft.NumOut()
-	if outs > 0 && ft.Out(outs-1) == errorType {
-		outs--
-	}
-	if outs > 1 {
-		return reflect.Value{}, fmt.Errorf("the function returns %d values; a command writes one", outs)
-	}
-
-	res := fn.Call(ins)
-	if outs < len(res) {
-		if err := res[outs]; !err.IsNil() {
-			return reflect.Value{}, err.Interface().(error)
-		}
-	}
-	if outs == 0 {
-		return reflect.Value{}, nil
-	}
-	return res[0], nil
+	return nil
 }
 
-// request builds the struct a whole command passes. Each parameter sets
-// the field whose json tag is its name or, without a tag, whose name
-// matches it ignoring case and underscores.
-func (c command) request(t reflect.Type, vals []any) (reflect.Value, error) {
-	st := t
-	if st.Kind() == reflect.Pointer {
-		st = st.Elem()
-	}
-	if st.Kind() != reflect.Struct {
-		return reflect.Value{}, fmt.Errorf("the function takes %s, but a whole command passes a struct", t)
-	}
-
-	req := reflect.New(st)
-	for i, p := range c.params {
-		f, ok := field(st, p.name)
-		if !ok {
-			return reflect.Value{}, fmt.Errorf("%s has no field for %s", st, p.name)
-		}
-		v, err := convert(f.Type, vals[i])
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("%s: %w", p.name, err)
-		}
-		req.Elem().FieldByIndex(f.Index).Set(v)
-	}
-	if t.Kind() == reflect.Pointer {
-		return req, nil
-	}
-	return req.Elem(), nil
+// readAll reads a stream argument whole, for a function taking a string
+// or byte slice.
+func readAll[T ~string | ~[]byte](r io.Reader) (T, error) {
+	data, err := io.ReadAll(r)
+	return T(data), err
 }
 
-// field finds the exported field of st that name sets.
-func field(st reflect.Type, name string) (reflect.StructField, bool) {
-	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, "_", "")) }
-	for _, f := range reflect.VisibleFields(st) {
-		if !f.IsExported() {
-			continue
-		}
-		tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-		if tag == name || (tag == "" && norm(f.Name) == norm(name)) {
-			return f, true
-		}
-	}
-	return reflect.StructField{}, false
+func writeString(w io.Writer, s string) error {
+	_, err := io.WriteString(w, s)
+	return err
 }
 
-// convert makes v a value of t. A value already assignable is used as it
-// is, bytes convert to any byte slice type, and a stream is read whole
-// into a string or byte slice. Anything else decodes from its JSON.
-func convert(t reflect.Type, v any) (reflect.Value, error) {
-	if v == nil {
-		return reflect.Zero(t), nil
-	}
-	rv := reflect.ValueOf(v)
-	if rv.Type().AssignableTo(t) {
-		return rv, nil
-	}
-
-	if r, ok := v.(io.Reader); ok {
-		data, err := io.ReadAll(r)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		v, rv = data, reflect.ValueOf(data)
-		if t.Kind() == reflect.String {
-			return reflect.ValueOf(string(data)).Convert(t), nil
-		}
-	}
-	if b, ok := v.([]byte); ok && t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
-		return reflect.ValueOf(b).Convert(t), nil
-	}
-
-	data, ok := v.(json.RawMessage)
-	if !ok {
-		var err error
-		if data, err = json.Marshal(v); err != nil {
-			return reflect.Value{}, err
-		}
-	}
-	ptr := reflect.New(t)
-	if err := json.Unmarshal(data, ptr.Interface()); err != nil {
-		return reflect.Value{}, err
-	}
-	return ptr.Elem(), nil
+func writeBytes(w io.Writer, b []byte) error {
+	_, err := w.Write(b)
+	return err
 }
 
-// write writes a result: string, path, bytes and text raw, a stream
-// copied, and anything else as JSON. A nil option writes nothing unless
-// it is JSON.
-func write(w io.Writer, t typ, v reflect.Value) error {
-	if t.kind == "option" {
-		if (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) && v.IsNil() {
-			switch t.elem.kind {
-			case "string", "path", "text", "bytes", "stream":
-				return nil
-			}
-			return writeJSON(w, nil)
-		}
-		if v.Kind() == reflect.Pointer && t.elem.kind != "text" {
-			v = v.Elem()
-		}
-		return write(w, *t.elem, v)
+// writeStream copies a stream result, closing it after when it can be.
+func writeStream(w io.Writer, r io.Reader) error {
+	if c, ok := r.(io.Closer); ok {
+		defer c.Close()
 	}
-
-	switch t.kind {
-	case "string", "path":
-		if v.Kind() == reflect.String {
-			_, err := io.WriteString(w, v.String())
-			return err
-		}
-		_, err := fmt.Fprint(w, v.Interface())
-		return err
-	case "text":
-		_, err := fmt.Fprint(w, v.Interface())
-		return err
-	case "bytes":
-		if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
-			_, err := w.Write(v.Bytes())
-			return err
-		}
-	case "stream":
-		switch x := v.Interface().(type) {
-		case io.Reader:
-			if c, ok := x.(io.Closer); ok {
-				defer c.Close()
-			}
-			_, err := io.Copy(w, x)
-			return err
-		case []byte:
-			_, err := w.Write(x)
-			return err
-		case string:
-			_, err := io.WriteString(w, x)
-			return err
-		}
-	}
-	return writeJSON(w, v.Interface())
+	_, err := io.Copy(w, r)
+	return err
 }
 
 func writeJSON(w io.Writer, v any) error {

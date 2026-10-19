@@ -19,6 +19,11 @@ func Greet(name string, excited bool) string {
 	return "Hello, " + name
 }
 
+// Repeat repeats word. A uint8 count makes the shim range-check it.
+func Repeat(word string, times uint8) string {
+	return strings.Repeat(word, int(times))
+}
+
 // Divide fails on a zero divisor.
 func Divide(ctx context.Context, a, b float64) (float64, error) {
 	if err := ctx.Err(); err != nil {
