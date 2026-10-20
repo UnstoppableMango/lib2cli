@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "description": "Checks and tests the TypeScript shim runtime, and supplies tsc to the end-to-end test.",
+  "type": "module",
+  "scripts": {
+    "check": "tsc",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "6.0.3"
+  }
+}

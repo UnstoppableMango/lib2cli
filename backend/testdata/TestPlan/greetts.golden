@@ -1,0 +1,162 @@
+{
+  "plan": {
+    "lang": "ts",
+    "package": "greet",
+    "version": "0.1.0",
+    "bin": "greet",
+    "commands": [
+      {
+        "name": "greet",
+        "func": "greet",
+        "whole": false,
+        "params": [
+          {
+            "name": "name",
+            "flag": "name",
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "excited",
+            "flag": "excited",
+            "type": {
+              "kind": "bool"
+            }
+          }
+        ],
+        "result": {
+          "kind": "string"
+        }
+      },
+      {
+        "name": "divide",
+        "func": "divide",
+        "whole": false,
+        "params": [
+          {
+            "name": "a",
+            "flag": "a",
+            "type": {
+              "kind": "float"
+            }
+          },
+          {
+            "name": "b",
+            "flag": "b",
+            "type": {
+              "kind": "float"
+            }
+          }
+        ],
+        "result": {
+          "kind": "float"
+        }
+      },
+      {
+        "name": "count",
+        "func": "count",
+        "whole": false,
+        "params": [
+          {
+            "name": "in",
+            "flag": "in",
+            "type": {
+              "kind": "stream"
+            }
+          }
+        ],
+        "result": {
+          "kind": "object",
+          "name": "Stats"
+        }
+      },
+      {
+        "name": "upper",
+        "func": "upper",
+        "whole": false,
+        "params": [
+          {
+            "name": "in",
+            "flag": "in",
+            "type": {
+              "kind": "stream"
+            }
+          }
+        ],
+        "result": {
+          "kind": "stream"
+        }
+      },
+      {
+        "name": "tag",
+        "func": "tag",
+        "whole": true,
+        "params": [
+          {
+            "name": "name",
+            "flag": "name",
+            "type": {
+              "kind": "string"
+            }
+          },
+          {
+            "name": "tags",
+            "flag": "tags",
+            "type": {
+              "kind": "list",
+              "elem": {
+                "kind": "string"
+              }
+            }
+          },
+          {
+            "name": "labels",
+            "flag": "labels",
+            "type": {
+              "kind": "map",
+              "elem": {
+                "kind": "string"
+              }
+            }
+          },
+          {
+            "name": "note",
+            "flag": "note",
+            "type": {
+              "kind": "option",
+              "elem": {
+                "kind": "string"
+              }
+            }
+          },
+          {
+            "name": "options",
+            "flag": "options",
+            "type": {
+              "kind": "option",
+              "elem": {
+                "kind": "object",
+                "name": "Options"
+              }
+            }
+          }
+        ],
+        "result": {
+          "kind": "object",
+          "name": "Tagged"
+        }
+      },
+      {
+        "name": "version",
+        "func": "version",
+        "whole": false,
+        "params": [],
+        "result": {
+          "kind": "text"
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

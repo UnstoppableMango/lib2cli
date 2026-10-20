@@ -54,25 +54,22 @@ func TestPlan(t *testing.T) {
 	}
 }
 
-// TestGenerate checks that a model that plans cleanly says code generation
-// is pending, and that one with errors says nothing more.
+// TestGenerate checks that a model with errors writes nothing.
 func TestGenerate(t *testing.T) {
 	tdl, err := exec.LookPath("tdl")
 	if err != nil {
 		t.Skip("tdl is not on PATH")
 	}
 
-	for dir, want := range map[string]int{"testdata/mdx": 1, "testdata/nobinding": 1} {
-		res, err := Backend{}.Generate(context.Background(), &plugin.Request{
-			Target: Target,
-			Model:  lower(t, tdl, dir),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(res.GetFiles()) != 0 || len(res.GetDiagnostics()) != want {
-			t.Errorf("%s: got %d files and %d diagnostics, want none and %d", dir, len(res.GetFiles()), len(res.GetDiagnostics()), want)
-		}
+	res, err := Backend{}.Generate(context.Background(), &plugin.Request{
+		Target: Target,
+		Model:  lower(t, tdl, "testdata/nobinding"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.GetFiles()) != 0 || len(res.GetDiagnostics()) != 1 {
+		t.Errorf("got %d files and %d diagnostics, want none and 1", len(res.GetFiles()), len(res.GetDiagnostics()))
 	}
 }
 

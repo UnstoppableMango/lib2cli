@@ -1,5 +1,6 @@
-# tdl finds the plugin on PATH, completes the handshake, and checks the
-# fixture's directives against the ones the plugin declares.
+# tdl finds the plugin on PATH, completes the handshake, checks the
+# fixture's directives against the ones the plugin declares, and writes the
+# TypeScript project.
 {
   runCommand,
   tdl,
@@ -16,7 +17,8 @@ runCommand "lib2cli-gen-mdx"
     mkdir -p backend/testdata
     cp -r ${../../lib} lib
     cp -r ${../../backend/testdata/mdx} backend/testdata/mdx
-    tdl gen --target lib2cli -o out backend/testdata/mdx/source.tdl 2>&1 | tee log
-    grep -q 'planned 1 command(s) for @mdx-js/mdx; TypeScript generation is not implemented yet' log
+    tdl gen --target lib2cli -o out backend/testdata/mdx/source.tdl
+    grep -q '"@mdx-js/mdx": "3.1.0"' out/package.json
+    grep -q 'lib.compile(' out/src/main.ts
     touch $out
   ''
