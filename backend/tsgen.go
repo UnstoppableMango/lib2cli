@@ -140,8 +140,8 @@ func tsMain(p *Plan) string {
 		if len(c.Params) > 0 {
 			body.WriteString("\n    ")
 		}
-		fmt.Fprintf(&body, "],\n    async call(a, io) {\n      const res = await lib.%s(%s);\n      await %s(io, res);\n    },\n  },\n",
-			c.Func, tsArgs(c), writer)
+		fmt.Fprintf(&body, "],\n    async call(a, io) {\n      const res%s = await lib.%s(%s);\n      await %s(io, res);\n    },\n  },\n",
+			tsResult(c.Result, writer), c.Func, tsArgs(c), writer)
 	}
 
 	imports := make([]string, 0, len(used))
@@ -215,6 +215,20 @@ func tsType(t Type, own string) string {
 		return "string"
 	}
 	return write(t)
+}
+
+// tsResult annotates a result written as JSON with its model type, since
+// writeJSON takes anything; the other writers' parameters check the rest.
+// An object has no declaration here, so a result holding one is left
+// unannotated.
+func tsResult(t Type, writer string) string {
+	if writer != "writeJSON" || hasKind(t, KindObject) {
+		return ""
+	}
+	if t.Kind == KindOption {
+		return ": " + tsType(t, "") + " | null"
+	}
+	return ": " + tsType(t, "")
 }
 
 // tsWriter is the runtime function that writes a result of type t.

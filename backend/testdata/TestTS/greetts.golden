@@ -61,7 +61,7 @@ await run("greet", [
       { name: "b", flag: "b", type: { kind: "float" } },
     ],
     async call(a, io) {
-      const res = await lib.divide(a[0] as number, a[1] as number);
+      const res: number = await lib.divide(a[0] as number, a[1] as number);
       await writeJSON(io, res);
     },
   },
