@@ -4,7 +4,6 @@ package backend
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/unstoppablemango/tdl/ir"
 	"github.com/unstoppablemango/tdl/plugin"
@@ -68,19 +67,15 @@ func (Backend) Generate(_ context.Context, req *plugin.Request) (*plugin.Respons
 		return &plugin.Response{Diagnostics: diags}, nil
 	}
 
+	var files []*plugin.File
+	var more []*plugin.Diagnostic
 	switch plan.Lang {
 	case "go":
-		files, more := goFiles(plan)
-		return &plugin.Response{Files: files, Diagnostics: append(diags, more...)}, nil
-	default:
-		// TypeScript comes next; until then a model that plans cleanly
-		// says so rather than writing nothing silently.
-		diags = append(diags, &plugin.Diagnostic{
-			Severity: plugin.Severity_SEVERITY_WARNING,
-			Message:  fmt.Sprintf("planned %d command(s) for %s; TypeScript generation is not implemented yet", len(plan.Commands), plan.Package),
-		})
-		return &plugin.Response{Diagnostics: diags}, nil
+		files, more = goFiles(plan)
+	case "ts":
+		files, more = tsFiles(plan)
 	}
+	return &plugin.Response{Files: files, Diagnostics: append(diags, more...)}, nil
 }
 
 // hasErrors says whether any diagnostic is an error.

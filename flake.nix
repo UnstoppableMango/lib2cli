@@ -59,6 +59,7 @@
               gopls
               gnumake
               nixfmt
+              nodejs
               tdl
             ];
           };

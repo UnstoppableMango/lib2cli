@@ -1,0 +1,62 @@
+// The npm library the end-to-end test generates, builds and runs a shim
+// for. Its source is in lib/.
+package greet
+
+import "../../../lib/lib2cli.tdl" as lib
+
+type GreetRequest {
+  name: string
+  excited: bool
+}
+
+type DivideRequest {
+  a: float64
+  b: float64
+}
+
+type CountRequest {
+  in: lib.Stream
+}
+
+type Stats {
+  lines: int
+  bytes: int
+}
+
+type UpperRequest {
+  in: lib.Stream
+}
+
+type Options {
+  shout: bool?
+}
+
+type TagRequest {
+  name: string
+  tags: List<string>
+  labels: Map<string, string>
+  note: string?
+  options: Options?
+}
+
+type Tagged {
+  label: string
+  note: string?
+}
+
+type VersionRequest {}
+
+type Greet {
+  greet: lib.Fn<GreetRequest, string>
+  divide: lib.Fn<DivideRequest, float64>
+  count: lib.Fn<CountRequest, Stats>
+  upper: lib.Fn<UpperRequest, lib.Stream>
+  tag: lib.Fn<TagRequest, Tagged>
+  version: lib.Fn<VersionRequest, lib.Text>
+}
+
+target lib2cli for greet {
+  npm("greet", "0.1.0")
+  Greet => cli
+  Greet.tag => whole
+}

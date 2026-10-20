@@ -9,7 +9,8 @@ A `.tdl` file describes a library's functions and binds them to a Go module or n
 
 For a Go module, `tdl gen` writes a project that builds with `go generate && go build`: `go.mod` pinning the library, `lib2cli.json` holding the commands, `main.go`, `shim.go`, the runtime that parses flags, and `generate.go`.
 `go generate` runs `generate.go`, which reads the library's real signatures from the compiler's export data and writes `commands.go`, a purpose-built call per command, so the shim uses no reflection and a signature the model does not fit fails the build.
-TypeScript is planned but not generated yet.
+For an npm package, it writes a project that builds with `npm install && npm run build`: `package.json` pinning the library, typescript and Node's types, `tsconfig.json`, `src/shim.ts`, the runtime, and `src/main.ts`, a call per command.
+Each call casts its arguments to the types the model gives and passes the result to a writer typed for the model's result, so `tsc` checks the model against the library's own declarations and a signature the model does not fit fails the build.
 See [docs/design.md](docs/design.md) for where it is going.
 
 ```tdl
@@ -42,11 +43,19 @@ On the command line a list flag repeats, a map flag repeats as `key=value`, an o
 A string, path, bytes or `Text` result is written raw, a stream is copied, and anything else is written as JSON; a failure exits 1 with the message on stderr, and a bad command line exits 2.
 The generated project writes no `go.sum`; whoever builds it resolves the library.
 
+A TypeScript shim awaits whatever a function returns, and a thrown error exits 1.
+It calls the function the field names, as written, and parses flags with `node:util`'s `parseArgs`, so a bool flag is given bare.
+Arguments are checked against the model's types at run time: an int must be a safe integer, a list's elements are checked one by one, and an object is passed as parsed, since only tsc knows its shape.
+Bytes arrive as a `Uint8Array` of the string's UTF-8, and a stream as a Node `Readable`.
+A stream result may be a Node stream, a web `ReadableStream` or any async iterable, and a `Text` result that carries VFile `messages` writes each to stderr as a warning.
+The generated project writes no lockfile either.
+
 ## Development
 
 ```bash
-nix develop        # go, gomod2nix, tdl
-go test ./...      # golden tests; needs tdl on PATH
+nix develop        # go, gomod2nix, node, tdl
+(cd backend/typescript && npm install && npx tsc && node --test)   # the TypeScript runtime
+go test ./...      # golden and end-to-end tests; needs tdl, and node for TypeScript
 go test ./... -update
 tdl gen backend/plan.tdl   # after editing the plan types
 gomod2nix generate --outdir nix   # after go.mod changes
