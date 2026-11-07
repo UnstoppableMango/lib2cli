@@ -8,6 +8,8 @@ github.com/unstoppablemango/tdl v0.5.0 h1:C9eVr2E3EHaMypNg+B/yoQXmSdw/gL4/4xlXJC
 github.com/unstoppablemango/tdl v0.5.0/go.mod h1:tgtrjrrKvbYf8AHNrsThQbwYR9aE7PExDzhcNqaKQDs=
 github.com/unstoppablemango/tdl v0.5.4 h1:jf5yijWzBdNVURDoOjcXCykzLLH8EeYT9YTOAXOgL+o=
 github.com/unstoppablemango/tdl v0.5.4/go.mod h1:n4Gq+Msdoh1tVS8O61yprf7mBQgn1LKvwDziUyGU6IA=
+github.com/unstoppablemango/tdl v0.5.9 h1:JD/+nS5AHoqMM7ZiHE8pnz+c/fh1fCqxVCZL4IEfi9A=
+github.com/unstoppablemango/tdl v0.5.9/go.mod h1:szV4l1NTRRdKNYoE7cnhSVPI8X7GHUpPSFt1wJKONdw=
 golang.org/x/mod v0.42.0 h1:ICeL3t2L30ljSPHHxDnR4fqVcBt/zR2zJAb9juavmQg=
 golang.org/x/mod v0.42.0/go.mod h1:u5fzIrRInkL8MaO1cbRkUHT64v303YIT5KEqpNr7jRs=
 google.golang.org/protobuf v1.36.12 h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=
